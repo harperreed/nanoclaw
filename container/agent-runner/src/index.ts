@@ -413,11 +413,75 @@ async function runQuery(
     log(`Additional directories: ${extraDirs.join(', ')}`);
   }
 
+  // Start the agent in the first writable extra mount so it sees the group's files.
+  // Fall back to /workspace/group (always writable) if no writable extra mounts exist.
+  const firstWritableExtra = extraDirs.find(d => {
+    try { fs.accessSync(d, fs.constants.W_OK); return true; } catch { return false; }
+  });
+  const agentCwd = firstWritableExtra ?? '/workspace/group';
+
+  // Point XDG dirs at the shared agent home so tool configs and data persist across
+  // all groups and container runs. /workspace/shared is mounted from the host's AgentXDG dir.
+  const sharedHome = '/workspace/shared';
+  sdkEnv.XDG_CONFIG_HOME = `${sharedHome}/.config`;
+  sdkEnv.XDG_DATA_HOME = `${sharedHome}/.local/share`;
+  sdkEnv.XDG_STATE_HOME = `${sharedHome}/.local/state`;
+  sdkEnv.XDG_CACHE_HOME = `${sharedHome}/.cache`;
+  log(`XDG dirs → ${sharedHome}/{{.config,.local,.cache}}`);
+
+  // Pass extra dirs as additionalDirectories so Claude Code loads their CLAUDE.md files.
+  // Exclude the cwd since Claude Code already loads CLAUDE.md from the cwd.
+  const additionalDirs = extraDirs.filter(d => d !== agentCwd);
+
+  // Load MCP servers from .mcp.json in the agent's working directory.
+  // The SDK doesn't read .mcp.json automatically, so we parse it and merge
+  // the servers into the mcpServers option alongside the built-in nanoclaw server.
+  const mcpJsonPath = path.join(agentCwd, '.mcp.json');
+  let workspaceMcpServers: Record<string, any> = {};
+  const allowedMcpPatterns: string[] = ['mcp__nanoclaw__*'];
+  if (fs.existsSync(mcpJsonPath)) {
+    try {
+      const mcpJson = JSON.parse(fs.readFileSync(mcpJsonPath, 'utf-8'));
+      if (mcpJson.mcpServers && typeof mcpJson.mcpServers === 'object') {
+        workspaceMcpServers = mcpJson.mcpServers;
+        for (const name of Object.keys(workspaceMcpServers)) {
+          allowedMcpPatterns.push(`mcp__${name}__*`);
+        }
+        log(`Loaded ${Object.keys(workspaceMcpServers).length} MCP servers from .mcp.json: ${Object.keys(workspaceMcpServers).join(', ')}`);
+      }
+    } catch (err) {
+      log(`Warning: failed to parse ${mcpJsonPath}: ${err}`);
+    }
+  }
+
+  // Add Parallel AI MCP servers if API key is available
+  const parallelApiKey = process.env.PARALLEL_API_KEY;
+  if (parallelApiKey) {
+    workspaceMcpServers['parallel-search'] = {
+      type: 'http',
+      url: 'https://search-mcp.parallel.ai/mcp',
+      headers: {
+        'Authorization': `Bearer ${parallelApiKey}`,
+      },
+    };
+    workspaceMcpServers['parallel-task'] = {
+      type: 'http',
+      url: 'https://task-mcp.parallel.ai/mcp',
+      headers: {
+        'Authorization': `Bearer ${parallelApiKey}`,
+      },
+    };
+    allowedMcpPatterns.push('mcp__parallel-search__*', 'mcp__parallel-task__*');
+    log('Parallel AI MCP servers configured');
+  } else {
+    log('PARALLEL_API_KEY not set, skipping Parallel AI integration');
+  }
+
   for await (const message of query({
     prompt: stream,
     options: {
-      cwd: '/workspace/group',
-      additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
+      cwd: agentCwd,
+      additionalDirectories: additionalDirs.length > 0 ? additionalDirs : undefined,
       resume: sessionId,
       resumeSessionAt: resumeAt,
       systemPrompt: globalClaudeMd
@@ -431,13 +495,14 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        ...allowedMcpPatterns,
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: ['project', 'user'],
       mcpServers: {
+        ...workspaceMcpServers,
         nanoclaw: {
           command: 'node',
           args: [mcpServerPath],
@@ -574,10 +639,11 @@ async function main(): Promise<void> {
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     log(`Agent error: ${errorMessage}`);
+    // Do not include newSessionId on error — prevents host from overwriting a valid session
+    // with the stale ID that caused the failure (which would create an infinite failure loop).
     writeOutput({
       status: 'error',
       result: null,
-      newSessionId: sessionId,
       error: errorMessage
     });
     process.exit(1);

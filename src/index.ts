@@ -29,6 +29,7 @@ import {
   setRegisteredGroup,
   setRouterState,
   setSession,
+  clearSession,
   storeChatMetadata,
   storeMessage,
 } from './db.js';
@@ -253,7 +254,12 @@ async function runAgent(
   // Wrap onOutput to track session ID from streamed results
   const wrappedOnOutput = onOutput
     ? async (output: ContainerOutput) => {
-        if (output.newSessionId) {
+        if (output.status === 'error') {
+          // Clear the session on error so the next run starts fresh rather than
+          // re-attempting a stale/invalid session that would cause another failure.
+          delete sessions[group.folder];
+          clearSession(group.folder);
+        } else if (output.newSessionId) {
           sessions[group.folder] = output.newSessionId;
           setSession(group.folder, output.newSessionId);
         }
