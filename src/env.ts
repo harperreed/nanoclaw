@@ -9,7 +9,12 @@ import { logger } from './logger.js';
  * so they don't leak to child processes.
  */
 export function readEnvFile(keys: string[]): Record<string, string> {
-  const envFile = path.join(process.cwd(), '.env');
+  // Inline BASE_DIR computation to avoid circular import (config.ts imports env.ts).
+  // .env should follow the data, not the code.
+  const baseDir = process.env.NANOCLAW_BASE_DIR
+    ? path.resolve(process.env.NANOCLAW_BASE_DIR)
+    : process.cwd();
+  const envFile = path.join(baseDir, '.env');
   let content: string;
   try {
     content = fs.readFileSync(envFile, 'utf-8');

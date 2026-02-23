@@ -21,6 +21,8 @@
         <string>{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>{{HOME}}</string>
+        <key>NANOCLAW_BASE_DIR</key>
+        <string>{{NANOCLAW_BASE_DIR}}</string>
         <key>ASSISTANT_NAME</key>
         <string>Andy</string>
     </dict>

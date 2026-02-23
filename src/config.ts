@@ -20,6 +20,9 @@ export const SCHEDULER_POLL_INTERVAL = 60000;
 
 // Absolute paths needed for container mounts
 const PROJECT_ROOT = process.cwd();
+export const BASE_DIR = process.env.NANOCLAW_BASE_DIR
+  ? path.resolve(process.env.NANOCLAW_BASE_DIR)
+  : PROJECT_ROOT;
 const HOME_DIR = process.env.HOME || os.homedir();
 
 // Mount security: allowlist stored OUTSIDE project root, never mounted into containers
@@ -29,9 +32,9 @@ export const MOUNT_ALLOWLIST_PATH = path.join(
   'nanoclaw',
   'mount-allowlist.json',
 );
-export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
-export const GROUPS_DIR = path.resolve(PROJECT_ROOT, 'groups');
-export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
+export const STORE_DIR = path.resolve(BASE_DIR, 'store');
+export const GROUPS_DIR = path.resolve(BASE_DIR, 'groups');
+export const DATA_DIR = path.resolve(BASE_DIR, 'data');
 export const MAIN_GROUP_FOLDER = 'main';
 
 export const CONTAINER_IMAGE =

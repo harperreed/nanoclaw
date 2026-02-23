@@ -4,7 +4,6 @@
  */
 import { ChildProcess, exec, spawn } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 
 import {
@@ -20,7 +19,7 @@ import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
 import { CONTAINER_RUNTIME_BIN, readonlyMountArgs, stopContainer } from './container-runtime.js';
-import { validateAdditionalMounts } from './mount-security.js';
+
 import { RegisteredGroup } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
@@ -54,7 +53,7 @@ interface VolumeMount {
 function buildVolumeMounts(
   group: RegisteredGroup,
   isMain: boolean,
-): { mounts: VolumeMount[]; workdir: string } {
+): VolumeMount[] {
   const mounts: VolumeMount[] = [];
   const projectRoot = process.cwd();
   const groupDir = resolveGroupFolderPath(group.folder);
@@ -107,37 +106,22 @@ function buildVolumeMounts(
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
 
-  // Compute additional mount container paths for CLAUDE_CODE_ADDITIONAL_DIRECTORIES.
-  // This tells Claude Code to load CLAUDE.md from each extra mounted directory,
-  // so groups can have their own CLAUDE.md in their workspace directory.
-  const additionalDirs: string[] = [];
-  if (group.containerConfig?.additionalMounts) {
-    for (const m of group.containerConfig.additionalMounts) {
-      const cp = m.containerPath && !m.containerPath.startsWith('/')
-        ? `/workspace/extra/${m.containerPath}`
-        : m.containerPath || `/workspace/extra/${path.basename(m.hostPath)}`;
-      additionalDirs.push(cp);
-    }
-  }
-
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
-  fs.writeFileSync(settingsFile, JSON.stringify({
-    env: {
-      // Enable agent swarms (subagent orchestration)
-      // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
-      CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
-      // Load CLAUDE.md from additional mounted directories
-      // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
-      CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
-      // Point Claude Code to each extra mount so it reads their CLAUDE.md files
-      ...(additionalDirs.length > 0 && {
-        CLAUDE_CODE_ADDITIONAL_DIRECTORIES: additionalDirs.join(':'),
-      }),
-      // Enable Claude's memory feature (persists user preferences between sessions)
-      // https://code.claude.com/docs/en/memory#manage-auto-memory
-      CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
-    },
-  }, null, 2) + '\n');
+  if (!fs.existsSync(settingsFile)) {
+    fs.writeFileSync(settingsFile, JSON.stringify({
+      env: {
+        // Enable agent swarms (subagent orchestration)
+        // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
+        CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+        // Load CLAUDE.md from additional mounted directories
+        // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
+        CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+        // Enable Claude's memory feature (persists user preferences between sessions)
+        // https://code.claude.com/docs/en/memory#manage-auto-memory
+        CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+      },
+    }, null, 2) + '\n');
+  }
 
   // Sync skills from container/skills/ into each group's .claude/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');
@@ -153,16 +137,6 @@ function buildVolumeMounts(
   mounts.push({
     hostPath: groupSessionsDir,
     containerPath: '/home/node/.claude',
-    readonly: false,
-  });
-
-  // Shared agent home: XDG config/data/state persists across all groups and container runs.
-  // Mounted read-write so tools can write configs that survive container restarts.
-  const sharedAgentHome = path.join(os.homedir(), 'Public', 'AgentXDG');
-  fs.mkdirSync(sharedAgentHome, { recursive: true });
-  mounts.push({
-    hostPath: sharedAgentHome,
-    containerPath: '/workspace/shared',
     readonly: false,
   });
 
@@ -192,24 +166,7 @@ function buildVolumeMounts(
     readonly: false,
   });
 
-  // Additional mounts validated against external allowlist (tamper-proof from containers)
-  if (group.containerConfig?.additionalMounts) {
-    const validatedMounts = validateAdditionalMounts(
-      group.containerConfig.additionalMounts,
-      group.name,
-      isMain,
-    );
-    mounts.push(...validatedMounts);
-  }
-
-  // Start the agent in the first additional mount so it sees the group's files.
-  // Fall back to /workspace/group (the state dir) if no extra mounts exist.
-  const extraMounts = mounts.filter((m) => m.containerPath.startsWith('/workspace/extra/'));
-  logger.info({ group: group.name, extraMounts: extraMounts.map((m) => m.containerPath) }, 'extra mounts for workdir selection');
-  const firstExtra = extraMounts[0];
-  const workdir = firstExtra ? firstExtra.containerPath : '/workspace/group';
-
-  return { mounts, workdir };
+  return mounts;
 }
 
 /**
@@ -220,7 +177,7 @@ function readSecrets(): Record<string, string> {
   return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'PARALLEL_API_KEY']);
 }
 
-function buildContainerArgs(mounts: VolumeMount[], containerName: string, workdir: string): string[] {
+function buildContainerArgs(mounts: VolumeMount[], containerName: string): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
   // Pass host timezone so container's local time matches the user's
@@ -247,7 +204,6 @@ function buildContainerArgs(mounts: VolumeMount[], containerName: string, workdi
     }
   }
 
-  args.push('-w', workdir);
   args.push(CONTAINER_IMAGE);
 
   return args;
@@ -264,10 +220,10 @@ export async function runContainerAgent(
   const groupDir = resolveGroupFolderPath(group.folder);
   fs.mkdirSync(groupDir, { recursive: true });
 
-  const { mounts, workdir } = buildVolumeMounts(group, input.isMain);
+  const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  const containerArgs = buildContainerArgs(mounts, containerName, workdir);
+  const containerArgs = buildContainerArgs(mounts, containerName);
 
   logger.debug(
     {

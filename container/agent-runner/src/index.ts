@@ -398,46 +398,10 @@ async function runQuery(
     globalClaudeMd = fs.readFileSync(globalClaudeMdPath, 'utf-8');
   }
 
-  // Discover additional directories mounted at /workspace/extra/*
-  // These are passed to the SDK so their CLAUDE.md files are loaded automatically
-  const extraDirs: string[] = [];
-  const extraBase = '/workspace/extra';
-  if (fs.existsSync(extraBase)) {
-    for (const entry of fs.readdirSync(extraBase)) {
-      const fullPath = path.join(extraBase, entry);
-      if (fs.statSync(fullPath).isDirectory()) {
-        extraDirs.push(fullPath);
-      }
-    }
-  }
-  if (extraDirs.length > 0) {
-    log(`Additional directories: ${extraDirs.join(', ')}`);
-  }
-
-  // Start the agent in the first writable extra mount so it sees the group's files.
-  // Fall back to /workspace/group (always writable) if no writable extra mounts exist.
-  const firstWritableExtra = extraDirs.find(d => {
-    try { fs.accessSync(d, fs.constants.W_OK); return true; } catch { return false; }
-  });
-  const agentCwd = firstWritableExtra ?? '/workspace/group';
-
-  // Point XDG dirs at the shared agent home so tool configs and data persist across
-  // all groups and container runs. /workspace/shared is mounted from the host's AgentXDG dir.
-  const sharedHome = '/workspace/shared';
-  sdkEnv.XDG_CONFIG_HOME = `${sharedHome}/.config`;
-  sdkEnv.XDG_DATA_HOME = `${sharedHome}/.local/share`;
-  sdkEnv.XDG_STATE_HOME = `${sharedHome}/.local/state`;
-  sdkEnv.XDG_CACHE_HOME = `${sharedHome}/.cache`;
-  log(`XDG dirs → ${sharedHome}/{{.config,.local,.cache}}`);
-
-  // Pass extra dirs as additionalDirectories so Claude Code loads their CLAUDE.md files.
-  // Exclude the cwd since Claude Code already loads CLAUDE.md from the cwd.
-  const additionalDirs = extraDirs.filter(d => d !== agentCwd);
-
   // Load MCP servers from .mcp.json in the agent's working directory.
   // The SDK doesn't read .mcp.json automatically, so we parse it and merge
   // the servers into the mcpServers option alongside the built-in nanoclaw server.
-  const mcpJsonPath = path.join(agentCwd, '.mcp.json');
+  const mcpJsonPath = path.join('/workspace/group', '.mcp.json');
   let workspaceMcpServers: Record<string, any> = {};
   const allowedMcpPatterns: string[] = ['mcp__nanoclaw__*'];
   if (fs.existsSync(mcpJsonPath)) {
@@ -481,8 +445,7 @@ async function runQuery(
   for await (const message of query({
     prompt: stream,
     options: {
-      cwd: agentCwd,
-      additionalDirectories: additionalDirs.length > 0 ? additionalDirs : undefined,
+      cwd: '/workspace/group',
       resume: sessionId,
       resumeSessionAt: resumeAt,
       systemPrompt: globalClaudeMd

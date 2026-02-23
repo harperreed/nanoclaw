@@ -6,9 +6,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DB="$PROJECT_ROOT/store/messages.db"
-GROUPS_DIR="$PROJECT_ROOT/groups"
-DATA_DIR="$PROJECT_ROOT/data"
+BASE_DIR="${NANOCLAW_BASE_DIR:-$PROJECT_ROOT}"
+DB="$BASE_DIR/store/messages.db"
+GROUPS_DIR="$BASE_DIR/groups"
+DATA_DIR="$BASE_DIR/data"
 
 if [ -z "${1:-}" ]; then
   echo "Usage: $0 <group-folder>"
@@ -61,29 +62,7 @@ if [ "$FOLDER" = "main" ]; then
   MOUNT_ARGS+=(-v "$PROJECT_ROOT:/workspace/project")
 fi
 
-# Additional mounts from container_config — also track working dir
 WORKDIR="/workspace/group"
-if [ -n "$CONTAINER_CONFIG" ] && command -v node &>/dev/null; then
-  EXTRA=$(node -e "
-    const cfg = $CONTAINER_CONFIG;
-    if (cfg && cfg.additionalMounts && cfg.additionalMounts.length > 0) {
-      cfg.additionalMounts.forEach((m, i) => {
-        const cp = m.containerPath.startsWith('/') ? m.containerPath : '/workspace/extra/' + m.containerPath;
-        const ro = m.readonly ? ',readonly' : '';
-        console.log('MOUNT:--mount type=bind,source=' + m.hostPath + ',target=' + cp + ro);
-        if (i === 0) console.log('WORKDIR:' + cp);
-      });
-    }
-  " 2>/dev/null || true)
-
-  while IFS= read -r line; do
-    if [[ "$line" == MOUNT:* ]]; then
-      MOUNT_ARGS+=(${line#MOUNT:})
-    elif [[ "$line" == WORKDIR:* ]]; then
-      WORKDIR="${line#WORKDIR:}"
-    fi
-  done <<< "$EXTRA"
-fi
 
 echo "Mounts:"
 for arg in "${MOUNT_ARGS[@]}"; do
