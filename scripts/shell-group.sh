@@ -6,6 +6,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Source .env for NANOCLAW_BASE_DIR if not already set
+if [ -z "${NANOCLAW_BASE_DIR:-}" ] && [ -f "$PROJECT_ROOT/.env" ]; then
+  eval "$(grep '^NANOCLAW_BASE_DIR=' "$PROJECT_ROOT/.env")"
+fi
 BASE_DIR="${NANOCLAW_BASE_DIR:-$PROJECT_ROOT}"
 DB="$BASE_DIR/store/messages.db"
 GROUPS_DIR="$BASE_DIR/groups"
@@ -49,17 +54,31 @@ SESSIONS_DIR="$DATA_DIR/sessions/$FOLDER/.claude"
 mkdir -p "$SESSIONS_DIR"
 MOUNT_ARGS+=(-v "$SESSIONS_DIR:/home/node/.claude")
 
+# Shared XDG directories (toki, chronicle, memo, bbs, etc.)
+SHARED_CONFIG_DIR="$DATA_DIR/config"
+SHARED_LOCAL_SHARE_DIR="$DATA_DIR/local-share"
+MSGVAULT_DIR="$DATA_DIR/msgvault"
+mkdir -p "$SHARED_CONFIG_DIR" "$SHARED_LOCAL_SHARE_DIR" "$MSGVAULT_DIR"
+MOUNT_ARGS+=(-v "$SHARED_CONFIG_DIR:/home/node/.config")
+MOUNT_ARGS+=(-v "$SHARED_LOCAL_SHARE_DIR:/home/node/.local/share")
+MOUNT_ARGS+=(-v "$MSGVAULT_DIR:/home/node/.msgvault")
+
 # IPC dir
 IPC_DIR="$DATA_DIR/ipc/$FOLDER"
 mkdir -p "$IPC_DIR/messages" "$IPC_DIR/tasks" "$IPC_DIR/input"
 MOUNT_ARGS+=(-v "$IPC_DIR:/workspace/ipc")
 
+# Global memory directory
+if [ -d "$GROUPS_DIR/global" ]; then
+  MOUNT_ARGS+=(-v "$GROUPS_DIR/global:/workspace/global:ro")
+fi
+
 # Agent runner source
 MOUNT_ARGS+=(--mount "type=bind,source=$PROJECT_ROOT/container/agent-runner/src,target=/app/src,readonly")
 
-# For main group: also mount project root
+# For main group: also mount data directory (BASE_DIR) read-only
 if [ "$FOLDER" = "main" ]; then
-  MOUNT_ARGS+=(-v "$PROJECT_ROOT:/workspace/project")
+  MOUNT_ARGS+=(-v "$BASE_DIR:/workspace/project:ro")
 fi
 
 WORKDIR="/workspace/group"

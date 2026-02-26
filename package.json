@@ -1,6 +1,6 @@
 {
   "name": "nanoclaw",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "Personal Claude assistant. Lightweight, secure, customizable.",
   "type": "module",
   "main": "dist/index.js",
@@ -15,7 +15,8 @@
     "setup": "tsx setup/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "shell": "bash scripts/shell-group.sh"
+    "shell": "bash scripts/shell-group.sh",
+    "ps": "bash scripts/ps.sh"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",

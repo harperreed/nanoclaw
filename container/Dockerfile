@@ -105,17 +105,26 @@ RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/
 # Create entrypoint script
 # Secrets are passed via stdin JSON — temp file is deleted immediately after Node reads it
 # Follow-up messages arrive via IPC files in /workspace/ipc/input/
-RUN printf '#!/bin/bash\nset -e\ncd /app && npx tsc --outDir /tmp/dist 2>&1 >&2\nln -s /app/node_modules /tmp/dist/node_modules\nchmod -R a-w /tmp/dist\ncat > /tmp/input.json\nnode /tmp/dist/index.js < /tmp/input.json\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+# Dangling-symlink cleanup: some tools (gsuite-mcp, msgvault) have symlinks
+# to /workspace/extra/ paths that only exist when the group has additionalMounts.
+# If the target doesn't exist, remove the symlink so the tool can create its
+# own default config directory instead of crashing on a broken link.
+RUN printf '#!/bin/bash\nset -e\nfor link in /home/node/.config/gsuite-mcp /home/node/.local/share/gsuite-mcp; do\n  [ -L "$link" ] && [ ! -e "$link" ] && rm -f "$link"\ndone\ncd /app && npx tsc --outDir /tmp/dist 2>&1 >&2\nln -s /app/node_modules /tmp/dist/node_modules\nchmod -R a-w /tmp/dist\ncat > /tmp/input.json\nnode /tmp/dist/index.js < /tmp/input.json\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Set ownership to node user (non-root) for writable directories.
 # Also chown the uv Python dir so the node user can install additional Python versions.
-# Create writable XDG data dirs for tools that need them, then symlink mounted data
+# Create writable XDG data dirs for tools that need them.
+# gsuite-mcp and msgvault symlinks are only useful when groups mount the
+# corresponding /workspace/extra/ paths — otherwise they dangle. We still
+# create them so groups that DO mount those paths get the config wired up,
+# but the directories under .config/ and .local/ must be writable by node
+# so tools like toki, chronicle, memo can create their own config dirs.
 RUN mkdir -p /home/node/.config /home/node/.local/share/bbs && \
-    ln -sf /workspace/extra/.msgvault /home/node/.msgvault && \
     ln -sf /workspace/extra/.config-gsuite-mcp /home/node/.config/gsuite-mcp && \
     ln -sf /workspace/extra/.local-share-gsuite-mcp /home/node/.local/share/gsuite-mcp
 
-RUN chown -R node:node /workspace /usr/local/uv && chmod 777 /home/node
+RUN chown -R node:node /workspace /usr/local/uv /home/node/.config /home/node/.local && \
+    chmod 777 /home/node
 
 # Switch to non-root user (required for --dangerously-skip-permissions)
 USER node

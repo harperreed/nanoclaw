@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 
 import {
+  BASE_DIR,
   CONTAINER_IMAGE,
   CONTAINER_MAX_OUTPUT_SIZE,
   CONTAINER_TIMEOUT,
@@ -59,13 +60,12 @@ function buildVolumeMounts(
   const groupDir = resolveGroupFolderPath(group.folder);
 
   if (isMain) {
-    // Main gets the project root read-only. Writable paths the agent needs
-    // (group folder, IPC, .claude/) are mounted separately below.
-    // Read-only prevents the agent from modifying host application code
-    // (src/, dist/, package.json, etc.) which would bypass the sandbox
-    // entirely on next restart.
+    // Main gets the data directory (BASE_DIR) read-only. This directory
+    // contains store/messages.db and groups/ — the data the agent needs.
+    // Writable paths (group folder, IPC, .claude/) are mounted separately.
+    // Read-only prevents the agent from modifying the database directly.
     mounts.push({
-      hostPath: projectRoot,
+      hostPath: BASE_DIR,
       containerPath: '/workspace/project',
       readonly: true,
     });
@@ -96,6 +96,34 @@ function buildVolumeMounts(
     }
   }
 
+  // Shared XDG directories (toki, chronicle, memo, bbs, gsuite-mcp, etc.)
+  // Mounted globally so all groups share the same tool state and config.
+  // Persists across container runs.
+  const sharedConfigDir = path.join(DATA_DIR, 'config');
+  fs.mkdirSync(sharedConfigDir, { recursive: true });
+  mounts.push({
+    hostPath: sharedConfigDir,
+    containerPath: '/home/node/.config',
+    readonly: false,
+  });
+
+  const sharedLocalShareDir = path.join(DATA_DIR, 'local-share');
+  fs.mkdirSync(sharedLocalShareDir, { recursive: true });
+  mounts.push({
+    hostPath: sharedLocalShareDir,
+    containerPath: '/home/node/.local/share',
+    readonly: false,
+  });
+
+  // msgvault data directory (email archive with full-text search)
+  const msgvaultDir = path.join(DATA_DIR, 'msgvault');
+  fs.mkdirSync(msgvaultDir, { recursive: true });
+  mounts.push({
+    hostPath: msgvaultDir,
+    containerPath: '/home/node/.msgvault',
+    readonly: false,
+  });
+
   // Per-group Claude sessions directory (isolated from other groups)
   // Each group gets their own .claude/ to prevent cross-group session access
   const groupSessionsDir = path.join(
@@ -106,22 +134,42 @@ function buildVolumeMounts(
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
 
+  // Build user-level settings: env vars + MCP servers from group's .mcp.json.
+  // MCP servers are synced every run so sub-agents (agent teams) discover them
+  // regardless of their working directory. Existing agent-added settings
+  // (e.g., permissions) are preserved via merge.
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
-  if (!fs.existsSync(settingsFile)) {
-    fs.writeFileSync(settingsFile, JSON.stringify({
-      env: {
-        // Enable agent swarms (subagent orchestration)
-        // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
-        CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
-        // Load CLAUDE.md from additional mounted directories
-        // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
-        CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
-        // Enable Claude's memory feature (persists user preferences between sessions)
-        // https://code.claude.com/docs/en/memory#manage-auto-memory
-        CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
-      },
-    }, null, 2) + '\n');
+  const existingSettings = fs.existsSync(settingsFile)
+    ? JSON.parse(fs.readFileSync(settingsFile, 'utf-8'))
+    : {};
+
+  existingSettings.env = {
+    // Enable agent swarms (subagent orchestration)
+    // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+    // Load CLAUDE.md from additional mounted directories
+    // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
+    CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+    // Enable Claude's memory feature (persists user preferences between sessions)
+    // https://code.claude.com/docs/en/memory#manage-auto-memory
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+  };
+
+  // Sync MCP servers from group's .mcp.json into user-level settings
+  // so sub-agents (spawned via agent teams) can discover them from any cwd
+  const groupMcpJsonPath = path.join(groupDir, '.mcp.json');
+  if (fs.existsSync(groupMcpJsonPath)) {
+    try {
+      const mcpJson = JSON.parse(fs.readFileSync(groupMcpJsonPath, 'utf-8'));
+      if (mcpJson.mcpServers && typeof mcpJson.mcpServers === 'object') {
+        existingSettings.mcpServers = mcpJson.mcpServers;
+      }
+    } catch {
+      // Non-fatal: top-level agent loads .mcp.json via agent-runner anyway
+    }
   }
+
+  fs.writeFileSync(settingsFile, JSON.stringify(existingSettings, null, 2) + '\n');
 
   // Sync skills from container/skills/ into each group's .claude/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');
