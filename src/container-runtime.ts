@@ -10,7 +10,10 @@ import { logger } from './logger.js';
 export const CONTAINER_RUNTIME_BIN = 'container';
 
 /** Returns CLI args for a readonly bind mount. */
-export function readonlyMountArgs(hostPath: string, containerPath: string): string[] {
+export function readonlyMountArgs(
+  hostPath: string,
+  containerPath: string,
+): string[] {
   return ['--mount', `type=bind,source=${hostPath},target=${containerPath},readonly`];
 }
 
@@ -74,10 +77,15 @@ export function cleanupOrphans(): void {
     for (const name of orphans) {
       try {
         execSync(stopContainer(name), { stdio: 'pipe' });
-      } catch { /* already stopped */ }
+      } catch {
+        /* already stopped */
+      }
     }
     if (orphans.length > 0) {
-      logger.info({ count: orphans.length, names: orphans }, 'Stopped orphaned containers');
+      logger.info(
+        { count: orphans.length, names: orphans },
+        'Stopped orphaned containers',
+      );
     }
   } catch (err) {
     logger.warn({ err }, 'Failed to clean up orphaned containers');
