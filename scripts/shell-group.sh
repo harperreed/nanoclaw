@@ -56,11 +56,11 @@ MOUNT_ARGS+=(-v "$SESSIONS_DIR:/home/node/.claude")
 
 # Shared XDG directories (toki, chronicle, memo, bbs, etc.)
 SHARED_CONFIG_DIR="$DATA_DIR/config"
-SHARED_LOCAL_SHARE_DIR="$DATA_DIR/local-share"
+HOST_LOCAL_SHARE_DIR="$HOME/.local/share"
 MSGVAULT_DIR="$DATA_DIR/msgvault"
-mkdir -p "$SHARED_CONFIG_DIR" "$SHARED_LOCAL_SHARE_DIR" "$MSGVAULT_DIR"
+mkdir -p "$SHARED_CONFIG_DIR" "$MSGVAULT_DIR"
 MOUNT_ARGS+=(-v "$SHARED_CONFIG_DIR:/home/node/.config")
-MOUNT_ARGS+=(-v "$SHARED_LOCAL_SHARE_DIR:/home/node/.local/share")
+MOUNT_ARGS+=(-v "$HOST_LOCAL_SHARE_DIR:/home/node/.local/share")
 MOUNT_ARGS+=(-v "$MSGVAULT_DIR:/home/node/.msgvault")
 
 # IPC dir

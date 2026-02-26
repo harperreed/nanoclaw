@@ -111,10 +111,10 @@ function buildVolumeMounts(
     readonly: false,
   });
 
-  const sharedLocalShareDir = path.join(DATA_DIR, 'local-share');
-  fs.mkdirSync(sharedLocalShareDir, { recursive: true });
+  const homeDir = process.env.HOME || '/Users/harper';
+  const hostLocalShareDir = path.join(homeDir, '.local', 'share');
   mounts.push({
-    hostPath: sharedLocalShareDir,
+    hostPath: hostLocalShareDir,
     containerPath: '/home/node/.local/share',
     readonly: false,
   });
