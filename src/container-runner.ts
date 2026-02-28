@@ -204,6 +204,35 @@ function buildVolumeMounts(
     readonly: false,
   });
 
+  // Additional mounts from group's containerConfig (validated against allowlist)
+  if (group.containerConfig?.additionalMounts?.length) {
+    const validated = validateAdditionalMounts(
+      group.containerConfig.additionalMounts,
+      group.name,
+      isMain,
+    );
+    // Deduplicate by resolved host path to prevent Apple Container VirtioFS
+    // tag collisions (symlinks can cause the same real path to appear twice)
+    const existingRealPaths = new Set(
+      mounts.map((m) => {
+        try { return fs.realpathSync(m.hostPath); } catch { return m.hostPath; }
+      }),
+    );
+    for (const mount of validated) {
+      let realPath: string;
+      try { realPath = fs.realpathSync(mount.hostPath); } catch { realPath = mount.hostPath; }
+      if (existingRealPaths.has(realPath)) {
+        logger.warn(
+          { group: group.name, hostPath: mount.hostPath, realPath, containerPath: mount.containerPath },
+          'Skipping duplicate mount (resolves to already-mounted path)',
+        );
+        continue;
+      }
+      existingRealPaths.add(realPath);
+      mounts.push(mount);
+    }
+  }
+
   // Copy agent-runner source into a per-group writable location so agents
   // can customize it (add tools, change behavior) without affecting other
   // groups. Recompiled on container startup via entrypoint.sh.
@@ -236,7 +265,7 @@ function buildVolumeMounts(
  * Secrets are never written to disk or mounted as files.
  */
 function readSecrets(): Record<string, string> {
-  return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'PARALLEL_API_KEY']);
+  return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'PARALLEL_API_KEY', 'TWITTER_API_KEY']);
 }
 
 function buildContainerArgs(
