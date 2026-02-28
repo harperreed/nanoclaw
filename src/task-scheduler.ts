@@ -118,14 +118,14 @@ async function runTask(
   const sessionId =
     task.context_mode === 'group' ? sessions[task.group_folder] : undefined;
 
-  // After the task produces a result, close the container promptly.
-  // Tasks are single-turn — no need to wait IDLE_TIMEOUT (30 min) for the
-  // query loop to time out. A short delay handles any final MCP calls.
+  // Close the container after it stops producing results. The timer resets
+  // on each new result so long-running tasks (e.g. research agents that
+  // spawn sub-agents) stay alive as long as they keep producing output.
   const TASK_CLOSE_DELAY_MS = 10000;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
   const scheduleClose = () => {
-    if (closeTimer) return; // already scheduled
+    if (closeTimer) clearTimeout(closeTimer);
     closeTimer = setTimeout(() => {
       logger.debug({ taskId: task.id }, 'Closing task container after result');
       deps.queue.closeStdin(task.chat_jid);
