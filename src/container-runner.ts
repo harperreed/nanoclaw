@@ -173,7 +173,10 @@ function buildVolumeMounts(
     }
   }
 
-  fs.writeFileSync(settingsFile, JSON.stringify(existingSettings, null, 2) + '\n');
+  fs.writeFileSync(
+    settingsFile,
+    JSON.stringify(existingSettings, null, 2) + '\n',
+  );
 
   // Sync skills from container/skills/ into each group's .claude/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');
@@ -215,15 +218,28 @@ function buildVolumeMounts(
     // tag collisions (symlinks can cause the same real path to appear twice)
     const existingRealPaths = new Set(
       mounts.map((m) => {
-        try { return fs.realpathSync(m.hostPath); } catch { return m.hostPath; }
+        try {
+          return fs.realpathSync(m.hostPath);
+        } catch {
+          return m.hostPath;
+        }
       }),
     );
     for (const mount of validated) {
       let realPath: string;
-      try { realPath = fs.realpathSync(mount.hostPath); } catch { realPath = mount.hostPath; }
+      try {
+        realPath = fs.realpathSync(mount.hostPath);
+      } catch {
+        realPath = mount.hostPath;
+      }
       if (existingRealPaths.has(realPath)) {
         logger.warn(
-          { group: group.name, hostPath: mount.hostPath, realPath, containerPath: mount.containerPath },
+          {
+            group: group.name,
+            hostPath: mount.hostPath,
+            realPath,
+            containerPath: mount.containerPath,
+          },
           'Skipping duplicate mount (resolves to already-mounted path)',
         );
         continue;
@@ -265,7 +281,12 @@ function buildVolumeMounts(
  * Secrets are never written to disk or mounted as files.
  */
 function readSecrets(): Record<string, string> {
-  return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'PARALLEL_API_KEY', 'TWITTER_API_KEY']);
+  return readEnvFile([
+    'CLAUDE_CODE_OAUTH_TOKEN',
+    'ANTHROPIC_API_KEY',
+    'PARALLEL_API_KEY',
+    'TWITTER_API_KEY',
+  ]);
 }
 
 function buildContainerArgs(

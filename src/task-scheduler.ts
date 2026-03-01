@@ -239,13 +239,20 @@ export function startSchedulerLoop(deps: SchedulerDependencies): void {
         // Advance next_run NOW so the next poll cycle doesn't re-enqueue this task.
         // For 'once' tasks, clear next_run entirely so they won't be picked up again.
         if (currentTask.schedule_type === 'cron') {
-          const interval = CronExpressionParser.parse(currentTask.schedule_value, {
-            tz: TIMEZONE,
+          const interval = CronExpressionParser.parse(
+            currentTask.schedule_value,
+            {
+              tz: TIMEZONE,
+            },
+          );
+          updateTask(currentTask.id, {
+            next_run: interval.next().toISOString(),
           });
-          updateTask(currentTask.id, { next_run: interval.next().toISOString() });
         } else if (currentTask.schedule_type === 'interval') {
           const ms = parseInt(currentTask.schedule_value, 10);
-          updateTask(currentTask.id, { next_run: new Date(Date.now() + ms).toISOString() });
+          updateTask(currentTask.id, {
+            next_run: new Date(Date.now() + ms).toISOString(),
+          });
         } else {
           // 'once' — clear next_run so getDueTasks won't return it again
           updateTask(currentTask.id, { next_run: null });
