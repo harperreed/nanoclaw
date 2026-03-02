@@ -13,6 +13,7 @@ import { AvailableGroup } from './container-runner.js';
 import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
+import { stripInternalTags } from './router.js';
 import { RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
@@ -79,7 +80,16 @@ export function startIpcWatcher(deps: IpcDeps): void {
                   isMain ||
                   (targetGroup && targetGroup.folder === sourceGroup)
                 ) {
-                  await deps.sendMessage(data.chatJid, data.text);
+                  const cleanText = stripInternalTags(data.text);
+                  if (!cleanText) {
+                    logger.debug(
+                      { chatJid: data.chatJid, sourceGroup },
+                      'IPC message was entirely internal tags, skipping send',
+                    );
+                    fs.unlinkSync(filePath);
+                    continue;
+                  }
+                  await deps.sendMessage(data.chatJid, cleanText);
                   logger.info(
                     { chatJid: data.chatJid, sourceGroup },
                     'IPC message sent',
