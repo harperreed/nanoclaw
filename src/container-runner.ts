@@ -74,6 +74,20 @@ function buildVolumeMounts(
       readonly: true,
     });
 
+    // Shadow .env so the agent cannot read secrets from the mounted project root.
+    // Secrets are passed via stdin instead (see readSecrets()).
+    // Apple Container only supports directory mounts, so we use an empty
+    // directory instead of /dev/null to shadow the .env file.
+    const envFile = path.join(projectRoot, '.env');
+    const isDockerRuntime = (CONTAINER_RUNTIME_BIN as string) === 'docker';
+    if (fs.existsSync(envFile) && isDockerRuntime) {
+      mounts.push({
+        hostPath: '/dev/null',
+        containerPath: '/workspace/project/.env',
+        readonly: true,
+      });
+    }
+
     // Main also gets its group folder as the working directory
     mounts.push({
       hostPath: groupDir,
