@@ -89,7 +89,12 @@ export interface Channel {
   // Optional: typing indicator. Channels that support it implement it.
   setTyping?(jid: string, isTyping: boolean): Promise<void>;
   // Optional: react to a message with an emoji.
-  reactToMessage?(jid: string, messageId: string, emoji: string, fromMe: boolean): Promise<void>;
+  reactToMessage?(
+    jid: string,
+    messageId: string,
+    emoji: string,
+    fromMe: boolean,
+  ): Promise<void>;
   // Optional: sync group/chat names from the platform.
   syncGroups?(force: boolean): Promise<void>;
 }

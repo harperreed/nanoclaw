@@ -30,6 +30,12 @@ export const MOUNT_ALLOWLIST_PATH = path.join(
   'nanoclaw',
   'mount-allowlist.json',
 );
+export const SENDER_ALLOWLIST_PATH = path.join(
+  HOME_DIR,
+  '.config',
+  'nanoclaw',
+  'sender-allowlist.json',
+);
 export const STORE_DIR = path.resolve(BASE_DIR, 'store');
 export const GROUPS_DIR = path.resolve(BASE_DIR, 'groups');
 export const DATA_DIR = path.resolve(BASE_DIR, 'data');

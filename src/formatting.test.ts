@@ -75,7 +75,12 @@ describe('formatMessages', () => {
         content: 'hi',
         timestamp: 't1',
       }),
-      makeMsg({ id: 'DEF456', sender_name: 'Bob', content: 'hey', timestamp: 't2' }),
+      makeMsg({
+        id: 'DEF456',
+        sender_name: 'Bob',
+        content: 'hey',
+        timestamp: 't2',
+      }),
     ];
     const result = formatMessages(msgs);
     expect(result).toContain('id="ABC123"');

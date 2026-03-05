@@ -300,7 +300,12 @@ export class WhatsAppChannel implements Channel {
     this.sock?.end(undefined);
   }
 
-  async reactToMessage(jid: string, messageId: string, emoji: string, fromMe: boolean): Promise<void> {
+  async reactToMessage(
+    jid: string,
+    messageId: string,
+    emoji: string,
+    fromMe: boolean,
+  ): Promise<void> {
     if (!this.connected) {
       logger.warn({ jid, messageId }, 'Cannot react: not connected');
       return;
