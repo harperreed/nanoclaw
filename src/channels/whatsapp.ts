@@ -300,6 +300,24 @@ export class WhatsAppChannel implements Channel {
     this.sock?.end(undefined);
   }
 
+  async reactToMessage(jid: string, messageId: string, emoji: string, fromMe: boolean): Promise<void> {
+    if (!this.connected) {
+      logger.warn({ jid, messageId }, 'Cannot react: not connected');
+      return;
+    }
+    try {
+      await this.sock.sendMessage(jid, {
+        react: {
+          text: emoji,
+          key: { remoteJid: jid, fromMe, id: messageId },
+        },
+      });
+      logger.info({ jid, messageId, emoji }, 'Reaction sent');
+    } catch (err) {
+      logger.warn({ jid, messageId, emoji, err }, 'Failed to send reaction');
+    }
+  }
+
   async setTyping(jid: string, isTyping: boolean): Promise<void> {
     try {
       const status = isTyping ? 'composing' : 'paused';

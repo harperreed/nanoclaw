@@ -58,30 +58,37 @@ describe('escapeXml', () => {
 // --- formatMessages ---
 
 describe('formatMessages', () => {
-  it('formats a single message as XML', () => {
+  it('formats a single message as XML with id attribute', () => {
     const result = formatMessages([makeMsg()]);
     expect(result).toBe(
       '<messages>\n' +
-        '<message sender="Alice" time="2024-01-01T00:00:00.000Z">hello</message>\n' +
+        '<message id="1" sender="Alice" time="2024-01-01T00:00:00.000Z">hello</message>\n' +
         '</messages>',
     );
   });
 
-  it('formats multiple messages', () => {
+  it('formats multiple messages with distinct IDs', () => {
     const msgs = [
       makeMsg({
-        id: '1',
+        id: 'ABC123',
         sender_name: 'Alice',
         content: 'hi',
         timestamp: 't1',
       }),
-      makeMsg({ id: '2', sender_name: 'Bob', content: 'hey', timestamp: 't2' }),
+      makeMsg({ id: 'DEF456', sender_name: 'Bob', content: 'hey', timestamp: 't2' }),
     ];
     const result = formatMessages(msgs);
+    expect(result).toContain('id="ABC123"');
+    expect(result).toContain('id="DEF456"');
     expect(result).toContain('sender="Alice"');
     expect(result).toContain('sender="Bob"');
     expect(result).toContain('>hi</message>');
     expect(result).toContain('>hey</message>');
+  });
+
+  it('escapes special characters in message IDs', () => {
+    const result = formatMessages([makeMsg({ id: 'id&<>"' })]);
+    expect(result).toContain('id="id&amp;&lt;&gt;&quot;"');
   });
 
   it('escapes special characters in sender names', () => {

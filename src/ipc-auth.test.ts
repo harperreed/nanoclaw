@@ -53,6 +53,7 @@ beforeEach(() => {
 
   deps = {
     sendMessage: async () => {},
+    reactToMessage: async () => {},
     registeredGroups: () => groups,
     registerGroup: (jid, group) => {
       groups[jid] = group;
@@ -431,6 +432,57 @@ describe('IPC message authorization', () => {
     // Main is always authorized regardless of target
     expect(
       isMessageAuthorized('whatsapp_main', true, 'unknown@g.us', groups),
+    ).toBe(true);
+  });
+});
+
+// --- IPC reaction authorization ---
+// Reactions use the same authorization logic as send_message.
+
+describe('IPC reaction authorization', () => {
+  function isReactionAuthorized(
+    sourceGroup: string,
+    isMain: boolean,
+    targetChatJid: string,
+    registeredGroups: Record<string, RegisteredGroup>,
+  ): boolean {
+    const targetGroup = registeredGroups[targetChatJid];
+    return isMain || (!!targetGroup && targetGroup.folder === sourceGroup);
+  }
+
+  it('main group can react in any group', () => {
+    expect(
+      isReactionAuthorized('whatsapp_main', true, 'other@g.us', groups),
+    ).toBe(true);
+    expect(
+      isReactionAuthorized('whatsapp_main', true, 'third@g.us', groups),
+    ).toBe(true);
+  });
+
+  it('non-main group can react in its own chat', () => {
+    expect(
+      isReactionAuthorized('other-group', false, 'other@g.us', groups),
+    ).toBe(true);
+  });
+
+  it('non-main group cannot react in another groups chat', () => {
+    expect(
+      isReactionAuthorized('other-group', false, 'main@g.us', groups),
+    ).toBe(false);
+    expect(
+      isReactionAuthorized('other-group', false, 'third@g.us', groups),
+    ).toBe(false);
+  });
+
+  it('non-main group cannot react in unregistered JID', () => {
+    expect(
+      isReactionAuthorized('other-group', false, 'unknown@g.us', groups),
+    ).toBe(false);
+  });
+
+  it('main group can react in unregistered JID', () => {
+    expect(
+      isReactionAuthorized('whatsapp_main', true, 'unknown@g.us', groups),
     ).toBe(true);
   });
 });

@@ -63,6 +63,32 @@ server.tool(
 );
 
 server.tool(
+  'react_to_message',
+  'React to a specific message with an emoji. Use the message ID from the conversation context (the id attribute on <message> tags).',
+  {
+    message_id: z.string().describe('The message ID from conversation context (id attribute on <message> tags)'),
+    emoji: z.string().describe('The emoji to react with (e.g. "👍", "❤️", "😂")'),
+    chat_jid: z.string().optional().describe('Target chat JID. Defaults to the current group.'),
+  },
+  async (args) => {
+    const targetJid = args.chat_jid || chatJid;
+
+    const data = {
+      type: 'react_to_message',
+      chatJid: targetJid,
+      messageId: args.message_id,
+      emoji: args.emoji,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(MESSAGES_DIR, data);
+
+    return { content: [{ type: 'text' as const, text: `Reacted with ${args.emoji}` }] };
+  },
+);
+
+server.tool(
   'schedule_task',
   `Schedule a recurring or one-time task. The task will run as a full agent with access to all tools.
 
