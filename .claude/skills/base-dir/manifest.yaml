@@ -1,0 +1,13 @@
+skill: base-dir
+version: 1.0.0
+description: "Support NANOCLAW_BASE_DIR env var to separate data from code"
+core_version: 0.1.0
+adds: []
+modifies:
+  - src/config.ts
+  - src/env.ts
+  - src/container-runner.ts
+structured: {}
+conflicts: []
+depends: []
+test: "npx vitest run src/container-runner.test.ts"

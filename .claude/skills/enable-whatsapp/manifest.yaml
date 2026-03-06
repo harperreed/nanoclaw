@@ -1,0 +1,11 @@
+skill: enable-whatsapp
+version: 1.0.0
+description: "Enable WhatsApp channel import in the barrel file so it connects on startup"
+core_version: 0.1.0
+adds: []
+modifies:
+  - src/channels/index.ts
+structured: {}
+conflicts: []
+depends: []
+test: "npx vitest run src/channels/registry.test.ts"

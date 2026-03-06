@@ -1,0 +1,14 @@
+skill: message-reactions
+version: 1.0.0
+description: "Add emoji reaction support via react_to_message IPC and MCP tool"
+core_version: 0.1.0
+adds: []
+modifies:
+  - src/types.ts
+  - src/ipc.ts
+  - src/index.ts
+  - src/channels/whatsapp.ts
+structured: {}
+conflicts: []
+depends: []
+test: "npx vitest run src/ipc-auth.test.ts"
