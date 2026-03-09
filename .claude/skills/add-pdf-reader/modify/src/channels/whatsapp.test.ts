@@ -28,14 +28,6 @@ vi.mock('../db.js', () => ({
   updateChatName: vi.fn(),
 }));
 
-// Mock transcription
-vi.mock('../transcription.js', () => ({
-  isVoiceMessage: vi.fn((msg: any) => msg.message?.audioMessage?.ptt === true),
-  transcribeAudioMessage: vi
-    .fn()
-    .mockResolvedValue('Hello this is a voice message'),
-}));
-
 // Mock fs
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
@@ -46,7 +38,6 @@ vi.mock('fs', async () => {
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
       writeFileSync: vi.fn(),
-      readFileSync: vi.fn(() => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xd8])),
     },
   };
 });
@@ -116,7 +107,6 @@ vi.mock('@whiskeysockets/baileys', () => {
 
 import { WhatsAppChannel, WhatsAppChannelOpts } from './whatsapp.js';
 import { getLastGroupSync, updateChatName, setLastGroupSync } from '../db.js';
-import { transcribeAudioMessage } from '../transcription.js';
 import { downloadMediaMessage } from '@whiskeysockets/baileys';
 
 // --- Test helpers ---
@@ -550,7 +540,7 @@ describe('WhatsAppChannel', () => {
       );
     });
 
-    it('transcribes voice messages', async () => {
+    it('handles message with no extractable text (e.g. voice note without caption)', async () => {
       const opts = createTestOpts();
       const channel = new WhatsAppChannel(opts);
 
@@ -572,82 +562,8 @@ describe('WhatsAppChannel', () => {
         },
       ]);
 
-      expect(transcribeAudioMessage).toHaveBeenCalled();
-      expect(opts.onMessage).toHaveBeenCalledTimes(1);
-      expect(opts.onMessage).toHaveBeenCalledWith(
-        'registered@g.us',
-        expect.objectContaining({
-          content: '[Voice: Hello this is a voice message]',
-        }),
-      );
-    });
-
-    it('falls back when transcription returns null', async () => {
-      vi.mocked(transcribeAudioMessage).mockResolvedValueOnce(null);
-
-      const opts = createTestOpts();
-      const channel = new WhatsAppChannel(opts);
-
-      await connectChannel(channel);
-
-      await triggerMessages([
-        {
-          key: {
-            id: 'msg-8b',
-            remoteJid: 'registered@g.us',
-            participant: '5551234@s.whatsapp.net',
-            fromMe: false,
-          },
-          message: {
-            audioMessage: { mimetype: 'audio/ogg; codecs=opus', ptt: true },
-          },
-          pushName: 'Frank',
-          messageTimestamp: Math.floor(Date.now() / 1000),
-        },
-      ]);
-
-      expect(opts.onMessage).toHaveBeenCalledTimes(1);
-      expect(opts.onMessage).toHaveBeenCalledWith(
-        'registered@g.us',
-        expect.objectContaining({
-          content: '[Voice Message - transcription unavailable]',
-        }),
-      );
-    });
-
-    it('falls back when transcription throws', async () => {
-      vi.mocked(transcribeAudioMessage).mockRejectedValueOnce(
-        new Error('API error'),
-      );
-
-      const opts = createTestOpts();
-      const channel = new WhatsAppChannel(opts);
-
-      await connectChannel(channel);
-
-      await triggerMessages([
-        {
-          key: {
-            id: 'msg-8c',
-            remoteJid: 'registered@g.us',
-            participant: '5551234@s.whatsapp.net',
-            fromMe: false,
-          },
-          message: {
-            audioMessage: { mimetype: 'audio/ogg; codecs=opus', ptt: true },
-          },
-          pushName: 'Frank',
-          messageTimestamp: Math.floor(Date.now() / 1000),
-        },
-      ]);
-
-      expect(opts.onMessage).toHaveBeenCalledTimes(1);
-      expect(opts.onMessage).toHaveBeenCalledWith(
-        'registered@g.us',
-        expect.objectContaining({
-          content: '[Voice Message - transcription failed]',
-        }),
-      );
+      // Skipped — no text content to process
+      expect(opts.onMessage).not.toHaveBeenCalled();
     });
 
     it('uses sender JID when pushName is absent', async () => {
@@ -1148,148 +1064,6 @@ describe('WhatsAppChannel', () => {
     it('does not expose prefixAssistantName (prefix handled internally)', () => {
       const channel = new WhatsAppChannel(createTestOpts());
       expect('prefixAssistantName' in channel).toBe(false);
-    });
-  });
-
-  describe('sendFile', () => {
-    it('sends an image with caption', async () => {
-      const opts = createTestOpts();
-      const channel = new WhatsAppChannel(opts);
-      await connectChannel(channel);
-
-      await channel.sendFile(
-        'registered@g.us',
-        '/tmp/test-image.png',
-        'image/png',
-        'Here is the chart',
-      );
-
-      expect(fakeSocket.sendMessage).toHaveBeenCalledWith('registered@g.us', {
-        image: expect.any(Buffer),
-        caption: 'Here is the chart',
-        mimetype: 'image/png',
-      });
-    });
-
-    it('sends a document with filename', async () => {
-      const opts = createTestOpts();
-      const channel = new WhatsAppChannel(opts);
-      await connectChannel(channel);
-
-      await channel.sendFile(
-        'registered@g.us',
-        '/tmp/report.pdf',
-        'application/pdf',
-      );
-
-      expect(fakeSocket.sendMessage).toHaveBeenCalledWith('registered@g.us', {
-        document: expect.any(Buffer),
-        mimetype: 'application/pdf',
-        fileName: 'report.pdf',
-        caption: undefined,
-      });
-    });
-
-    it('sends video files as video type', async () => {
-      const opts = createTestOpts();
-      const channel = new WhatsAppChannel(opts);
-      await connectChannel(channel);
-
-      await channel.sendFile(
-        'registered@g.us',
-        '/tmp/clip.mp4',
-        'video/mp4',
-      );
-
-      expect(fakeSocket.sendMessage).toHaveBeenCalledWith('registered@g.us', {
-        video: expect.any(Buffer),
-        caption: undefined,
-        mimetype: 'video/mp4',
-      });
-    });
-
-    it('sends audio files as audio type', async () => {
-      const opts = createTestOpts();
-      const channel = new WhatsAppChannel(opts);
-      await connectChannel(channel);
-
-      await channel.sendFile(
-        'registered@g.us',
-        '/tmp/song.mp3',
-        'audio/mpeg',
-      );
-
-      expect(fakeSocket.sendMessage).toHaveBeenCalledWith('registered@g.us', {
-        audio: expect.any(Buffer),
-        mimetype: 'audio/mpeg',
-      });
-    });
-
-    it('rejects binary mimetypes when file is actually text (redirect page)', async () => {
-      const opts = createTestOpts();
-      const channel = new WhatsAppChannel(opts);
-      await connectChannel(channel);
-
-      const fs = await import('fs');
-      vi.mocked(fs.default.readFileSync).mockReturnValueOnce(
-        Buffer.from('Found. Redirecting to https://example.com/image.jpg') as never,
-      );
-
-      await channel.sendFile(
-        'registered@g.us',
-        '/tmp/fake-image.png',
-        'image/png',
-      );
-
-      expect(fakeSocket.sendMessage).not.toHaveBeenCalled();
-      const { logger } = await import('../logger.js');
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ mimetype: 'image/png' }),
-        'File appears to be text, not binary — likely a redirect or error page',
-      );
-    });
-
-    it('rejects binary mimetypes when file is HTML error page', async () => {
-      const opts = createTestOpts();
-      const channel = new WhatsAppChannel(opts);
-      await connectChannel(channel);
-
-      const fs = await import('fs');
-      vi.mocked(fs.default.readFileSync).mockReturnValueOnce(
-        Buffer.from('<!DOCTYPE html><html><body>404 Not Found</body></html>') as never,
-      );
-
-      await channel.sendFile(
-        'registered@g.us',
-        '/tmp/missing.pdf',
-        'application/pdf',
-      );
-
-      expect(fakeSocket.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('allows text mimetypes through without validation', async () => {
-      const opts = createTestOpts();
-      const channel = new WhatsAppChannel(opts);
-      await connectChannel(channel);
-
-      const fs = await import('fs');
-      vi.mocked(fs.default.readFileSync).mockReturnValueOnce(
-        Buffer.from('name,value\nfoo,42') as never,
-      );
-
-      await channel.sendFile(
-        'registered@g.us',
-        '/tmp/data.csv',
-        'text/csv',
-      );
-
-      expect(fakeSocket.sendMessage).toHaveBeenCalledWith('registered@g.us', {
-        document: expect.any(Buffer),
-        mimetype: 'text/csv',
-        fileName: 'data.csv',
-        caption: undefined,
-      });
     });
   });
 });

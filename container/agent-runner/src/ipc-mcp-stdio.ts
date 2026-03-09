@@ -89,6 +89,87 @@ server.tool(
 );
 
 server.tool(
+  'send_file',
+  `Send a file to the user or group. Supports images, documents, audio, and video. The file must exist in your workspace.
+
+Common use cases:
+- Send a generated chart or screenshot
+- Share a PDF or document you created
+- Send an image you downloaded or processed
+
+The mimetype is auto-detected from the extension if not provided. Supported types include:
+- Images: image/png, image/jpeg, image/gif, image/webp
+- Documents: application/pdf, text/plain, text/csv
+- Audio: audio/mpeg, audio/ogg
+- Video: video/mp4`,
+  {
+    file_path: z.string().describe('Path to the file relative to your workspace (e.g., "output/chart.png", "attachments/report.pdf")'),
+    caption: z.string().optional().describe('Optional caption or description to send with the file'),
+    mimetype: z.string().optional().describe('MIME type override (auto-detected from extension if omitted)'),
+    chat_jid: z.string().optional().describe('Target chat JID. Defaults to the current group.'),
+  },
+  async (args) => {
+    // Resolve the file path relative to /workspace/group (the agent's cwd)
+    const resolvedPath = path.resolve('/workspace/group', args.file_path);
+
+    // Security: must stay within /workspace/group
+    if (!resolvedPath.startsWith('/workspace/group/')) {
+      return {
+        content: [{ type: 'text' as const, text: `File path must be within your workspace. Got: ${args.file_path}` }],
+        isError: true,
+      };
+    }
+
+    if (!fs.existsSync(resolvedPath)) {
+      return {
+        content: [{ type: 'text' as const, text: `File not found: ${args.file_path}` }],
+        isError: true,
+      };
+    }
+
+    // Auto-detect mimetype from extension if not provided
+    const ext = path.extname(args.file_path).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      '.pdf': 'application/pdf',
+      '.txt': 'text/plain',
+      '.csv': 'text/csv',
+      '.json': 'application/json',
+      '.mp3': 'audio/mpeg',
+      '.ogg': 'audio/ogg',
+      '.mp4': 'video/mp4',
+      '.zip': 'application/zip',
+      '.html': 'text/html',
+    };
+    const mimetype = args.mimetype || mimeMap[ext] || 'application/octet-stream';
+
+    const targetJid = args.chat_jid || chatJid;
+
+    // The host resolves this relative path against the group's directory
+    const relativePath = path.relative('/workspace/group', resolvedPath);
+
+    const data = {
+      type: 'send_file',
+      chatJid: targetJid,
+      filePath: relativePath,
+      mimetype,
+      caption: args.caption || undefined,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(MESSAGES_DIR, data);
+
+    return { content: [{ type: 'text' as const, text: `File "${relativePath}" sent${args.caption ? ` with caption: "${args.caption}"` : ''}.` }] };
+  },
+);
+
+server.tool(
   'schedule_task',
   `Schedule a recurring or one-time task. The task will run as a full agent with access to all tools. Returns the task ID for future reference. To modify an existing task, use update_task instead.
 

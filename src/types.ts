@@ -88,6 +88,13 @@ export interface Channel {
   disconnect(): Promise<void>;
   // Optional: typing indicator. Channels that support it implement it.
   setTyping?(jid: string, isTyping: boolean): Promise<void>;
+  // Optional: send a file (document, image, etc.) to a chat.
+  sendFile?(
+    jid: string,
+    filePath: string,
+    mimetype: string,
+    caption?: string,
+  ): Promise<void>;
   // Optional: react to a message with an emoji.
   reactToMessage?(
     jid: string,

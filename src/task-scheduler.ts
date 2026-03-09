@@ -237,6 +237,60 @@ async function runTask(
   updateTaskAfterRun(task.id, nextRun, resultSummary);
 }
 
+/**
+ * On startup, detect cron tasks that missed their scheduled window while
+ * the service was down. For each missed task, reset next_run to "now" so
+ * getDueTasks picks them up on the first poll cycle.
+ *
+ * A task is "missed" when:
+ *   1. Its next_run is in the future (already advanced past a window)
+ *   2. There's a window between last_run and next_run that was never executed
+ *   3. That missed window's time has already passed
+ */
+function recoverMissedTasks(): void {
+  const now = new Date();
+  const tasks = getAllTasks().filter(
+    (t) => t.status === 'active' && t.schedule_type === 'cron' && t.next_run,
+  );
+
+  for (const task of tasks) {
+    const nextRun = new Date(task.next_run!);
+    if (nextRun <= now) continue; // getDueTasks will handle these
+
+    // Parse cron and walk backwards from next_run to find the previous window.
+    // If that previous window is after last_run, the task missed it.
+    try {
+      const interval = CronExpressionParser.parse(task.schedule_value, {
+        tz: TIMEZONE,
+        currentDate: nextRun,
+      });
+      const prevWindow = interval.prev();
+      const prevTime = prevWindow.toDate();
+
+      const lastRun = task.last_run ? new Date(task.last_run) : null;
+
+      // The previous cron window was missed if:
+      // - It already passed (prevTime <= now)
+      // - The task didn't run during that window (no last_run, or last_run is before prevTime)
+      if (prevTime <= now && (!lastRun || lastRun < prevTime)) {
+        logger.info(
+          {
+            taskId: task.id,
+            group: task.group_folder,
+            missedWindow: prevTime.toISOString(),
+            previousNextRun: task.next_run,
+            lastRun: task.last_run,
+          },
+          'Recovering missed task — resetting next_run to now',
+        );
+        updateTask(task.id, { next_run: now.toISOString() });
+      }
+    } catch {
+      // Invalid cron expression — skip recovery for this task
+    }
+  }
+}
+
 let schedulerRunning = false;
 
 export function startSchedulerLoop(deps: SchedulerDependencies): void {
@@ -245,6 +299,9 @@ export function startSchedulerLoop(deps: SchedulerDependencies): void {
     return;
   }
   schedulerRunning = true;
+
+  recoverMissedTasks();
+
   logger.info('Scheduler loop started');
 
   const loop = async () => {

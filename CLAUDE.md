@@ -32,6 +32,38 @@ Single Node.js process that connects to WhatsApp, routes messages to Claude Agen
 | `/qodo-pr-resolver` | Fetch and fix Qodo PR review issues interactively or in batch |
 | `/get-qodo-rules` | Load org- and repo-level coding rules from Qodo before code tasks |
 
+## Container Mount Paths
+
+Every agent container gets a standard set of mounts. Groups can also have additional mounts configured via `containerConfig.additionalMounts`.
+
+### Standard Mounts (all groups)
+
+| Container Path | Host Path | Mode |
+|---------------|-----------|------|
+| `/workspace/group` | `GROUPS_DIR/{folder}` | read-write |
+| `/workspace/global` | `GROUPS_DIR/global` | read-write |
+| `/workspace/project` | `BASE_DIR` (NanoClaw source) | read-only |
+| `/workspace/ipc` | `DATA_DIR/ipc/{folder}` | read-write |
+
+### Additional Mounts (per-group)
+
+Configured in `containerConfig.additionalMounts`. Mounted at `/workspace/extra/{containerPath}`.
+
+| Group | Container Path | Host Path | Mode |
+|-------|---------------|-----------|------|
+| thinktank | `/workspace/extra/worldview` | `/Users/harper/agentspace/worldview` | read-only |
+| thinktank | `/workspace/extra/current-events` | `/Users/harper/agentspace/current-events` | read-only |
+| current-events | `/workspace/extra/worldview` | `/Users/harper/agentspace/worldview` | read-only |
+| current-events | `/workspace/extra/thinktank` | `/Users/harper/agentspace/thinktank` | read-only |
+| pa | `/workspace/extra/pa` | `/Users/harper/Public/AgentWorkspace/pa` | read-write |
+| pa | `/workspace/extra/.msgvault` | `/Users/harper/.msgvault` | read-write |
+| pa | `/workspace/extra/.config-gsuite-mcp` | `/Users/harper/.config/gsuite-mcp` | read-only |
+| pa | `/workspace/extra/.local-share-gsuite-mcp` | `/Users/harper/.local/share/gsuite-mcp` | read-only |
+| health | `/workspace/extra/healthdata` | `/Users/harper/Public/src/personal/healthdata` | read-only |
+| 2389 | `/workspace/extra/personal-os` | `/Users/harper/Public/agent/groups/personal-os` | read-only |
+
+Mount security is controlled by `~/.config/nanoclaw/mount-allowlist.json` (never mounted into containers).
+
 ## Development
 
 Run commands directly—don't tell the user to run them.

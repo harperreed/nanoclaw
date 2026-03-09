@@ -21,7 +21,6 @@ import {
 } from '../config.js';
 import { getLastGroupSync, setLastGroupSync, updateChatName } from '../db.js';
 import { logger } from '../logger.js';
-import { isVoiceMessage, transcribeAudioMessage } from '../transcription.js';
 import {
   Channel,
   OnInboundMessage,
@@ -242,25 +241,6 @@ export class WhatsAppChannel implements Channel {
               }
             }
 
-            // Transcribe voice messages before storing
-            if (isVoiceMessage(msg)) {
-              try {
-                const transcript = await transcribeAudioMessage(msg, this.sock);
-                if (transcript) {
-                  content = `[Voice: ${transcript}]`;
-                  logger.info(
-                    { chatJid, length: transcript.length },
-                    'Transcribed voice message',
-                  );
-                } else {
-                  content = '[Voice Message - transcription unavailable]';
-                }
-              } catch (err) {
-                logger.error({ err }, 'Voice transcription error');
-                content = '[Voice Message - transcription failed]';
-              }
-            }
-
             // Skip protocol messages with no text content (encryption keys, read receipts, etc.)
             if (!content) continue;
 
@@ -338,94 +318,6 @@ export class WhatsAppChannel implements Channel {
   async disconnect(): Promise<void> {
     this.connected = false;
     this.sock?.end(undefined);
-  }
-
-  async sendFile(
-    jid: string,
-    filePath: string,
-    mimetype: string,
-    caption?: string,
-  ): Promise<void> {
-    if (!this.connected) {
-      logger.warn({ jid, filePath }, 'Cannot send file: not connected');
-      return;
-    }
-    try {
-      const buffer = fs.readFileSync(filePath);
-      const fileName = path.basename(filePath);
-
-      // Validate binary files aren't actually text (e.g. redirect HTML or error pages)
-      const isBinaryMime =
-        mimetype.startsWith('image/') ||
-        mimetype.startsWith('video/') ||
-        mimetype.startsWith('audio/') ||
-        mimetype === 'application/pdf' ||
-        mimetype === 'application/zip';
-      if (isBinaryMime) {
-        const head = buffer.toString('utf-8', 0, Math.min(buffer.length, 512));
-        const looksLikeText = /^[\x20-\x7E\r\n\t]+$/.test(head);
-        const looksLikeHtml = /^\s*(<[!?]|Found\.|<!DOCTYPE|<html)/i.test(head);
-        if (looksLikeText || looksLikeHtml) {
-          logger.warn(
-            { jid, filePath, mimetype, size: buffer.length, preview: head.slice(0, 200) },
-            'File appears to be text, not binary — likely a redirect or error page',
-          );
-          return;
-        }
-      }
-
-      if (mimetype.startsWith('image/')) {
-        await this.sock.sendMessage(jid, {
-          image: buffer,
-          caption: caption || undefined,
-          mimetype,
-        });
-      } else if (mimetype.startsWith('video/')) {
-        await this.sock.sendMessage(jid, {
-          video: buffer,
-          caption: caption || undefined,
-          mimetype,
-        });
-      } else if (mimetype.startsWith('audio/')) {
-        await this.sock.sendMessage(jid, {
-          audio: buffer,
-          mimetype,
-        });
-      } else {
-        await this.sock.sendMessage(jid, {
-          document: buffer,
-          mimetype,
-          fileName,
-          caption: caption || undefined,
-        });
-      }
-      logger.info({ jid, fileName, mimetype }, 'File sent');
-    } catch (err) {
-      logger.warn({ jid, filePath, err }, 'Failed to send file');
-    }
-  }
-
-  async reactToMessage(
-    jid: string,
-    messageId: string,
-    emoji: string,
-    fromMe: boolean,
-  ): Promise<void> {
-    if (!this.connected) {
-      logger.warn({ jid, messageId }, 'Cannot react: not connected');
-      return;
-    }
-    try {
-      await this.sock.sendMessage(jid, {
-        react: {
-          text: emoji,
-          key: { remoteJid: jid, fromMe, id: messageId },
-        },
-      });
-      logger.info({ jid, messageId, emoji }, 'Reaction sent');
-    } catch (err) {
-      logger.warn({ jid, messageId, emoji, err }, 'Failed to send reaction');
-    }
   }
 
   async setTyping(jid: string, isTyping: boolean): Promise<void> {

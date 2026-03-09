@@ -53,6 +53,7 @@ beforeEach(() => {
 
   deps = {
     sendMessage: async () => {},
+    sendFile: async () => {},
     reactToMessage: async () => {},
     registeredGroups: () => groups,
     registerGroup: (jid, group) => {
@@ -483,6 +484,57 @@ describe('IPC reaction authorization', () => {
   it('main group can react in unregistered JID', () => {
     expect(
       isReactionAuthorized('whatsapp_main', true, 'unknown@g.us', groups),
+    ).toBe(true);
+  });
+});
+
+// --- IPC send_file authorization ---
+// File sending uses the same authorization logic as send_message.
+
+describe('IPC send_file authorization', () => {
+  function isFileSendAuthorized(
+    sourceGroup: string,
+    isMain: boolean,
+    targetChatJid: string,
+    registeredGroups: Record<string, RegisteredGroup>,
+  ): boolean {
+    const targetGroup = registeredGroups[targetChatJid];
+    return isMain || (!!targetGroup && targetGroup.folder === sourceGroup);
+  }
+
+  it('main group can send files to any group', () => {
+    expect(
+      isFileSendAuthorized('whatsapp_main', true, 'other@g.us', groups),
+    ).toBe(true);
+    expect(
+      isFileSendAuthorized('whatsapp_main', true, 'third@g.us', groups),
+    ).toBe(true);
+  });
+
+  it('non-main group can send files to its own chat', () => {
+    expect(
+      isFileSendAuthorized('other-group', false, 'other@g.us', groups),
+    ).toBe(true);
+  });
+
+  it('non-main group cannot send files to another groups chat', () => {
+    expect(
+      isFileSendAuthorized('other-group', false, 'main@g.us', groups),
+    ).toBe(false);
+    expect(
+      isFileSendAuthorized('other-group', false, 'third@g.us', groups),
+    ).toBe(false);
+  });
+
+  it('non-main group cannot send files to unregistered JID', () => {
+    expect(
+      isFileSendAuthorized('other-group', false, 'unknown@g.us', groups),
+    ).toBe(false);
+  });
+
+  it('main group can send files to unregistered JID', () => {
+    expect(
+      isFileSendAuthorized('whatsapp_main', true, 'unknown@g.us', groups),
     ).toBe(true);
   });
 });

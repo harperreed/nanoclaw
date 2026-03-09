@@ -1,11 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { _initTestDatabase, createTask, getTaskById } from './db.js';
+import {
+  _initTestDatabase,
+  createTask,
+  getTaskById,
+  updateTask,
+  updateTaskAfterRun,
+} from './db.js';
 import {
   _resetSchedulerLoopForTests,
   computeNextRun,
   startSchedulerLoop,
 } from './task-scheduler.js';
+
+// Use UTC timezone for predictable cron calculations in tests
+vi.mock('./config.js', async () => {
+  const actual = await vi.importActual<typeof import('./config.js')>('./config.js');
+  return { ...actual, TIMEZONE: 'UTC' };
+});
 
 describe('task scheduler', () => {
   beforeEach(() => {
@@ -153,6 +165,74 @@ describe('task scheduler', () => {
     // Should be anchored to scheduledTime + 60s, NOT Date.now() + 60s
     const expected = new Date(scheduledTime).getTime() + 60000;
     expect(new Date(nextRun!).getTime()).toBe(expected);
+  });
+
+  it('recovers missed cron tasks on startup by resetting next_run', async () => {
+    // Freeze time to a specific point: 9:15 AM on a known date
+    vi.setSystemTime(new Date('2026-03-08T09:15:00.000Z'));
+    const now = Date.now();
+
+    // Simulate: daily 8am task. Service was down at 8am so next_run was
+    // already advanced to tomorrow 8am. last_run is from yesterday.
+    createTask({
+      id: 'task-missed',
+      group_folder: 'news',
+      chat_jid: 'test@s.whatsapp.net',
+      prompt: 'missed digest',
+      schedule_type: 'cron',
+      schedule_value: '0 8 * * *', // daily at 8am UTC
+      context_mode: 'isolated',
+      // next_run skipped to tomorrow 8am
+      next_run: '2026-03-09T08:00:00.000Z',
+      status: 'active',
+      created_at: '2026-03-01T00:00:00.000Z',
+    });
+    // last_run needs to be from yesterday — but updateTaskAfterRun sets it to
+    // Date.now(). So we temporarily shift time back to simulate the prior run.
+    vi.setSystemTime(new Date('2026-03-07T08:05:00.000Z'));
+    updateTaskAfterRun('task-missed', '2026-03-09T08:00:00.000Z', 'ok');
+    vi.setSystemTime(new Date('2026-03-08T09:15:00.000Z'));
+
+    // Task whose next_run is in the future but ran on schedule
+    // (last_run covers the previous window) — should NOT be recovered
+    createTask({
+      id: 'task-ok',
+      group_folder: 'weather',
+      chat_jid: 'test@s.whatsapp.net',
+      prompt: 'weather check',
+      schedule_type: 'cron',
+      schedule_value: '0 18 * * *', // daily at 6pm UTC
+      context_mode: 'isolated',
+      // next_run is today at 6pm (still in the future, on schedule)
+      next_run: '2026-03-08T18:00:00.000Z',
+      status: 'active',
+      created_at: '2026-03-01T00:00:00.000Z',
+    });
+    // Ran yesterday at 6pm — correctly on schedule
+    vi.setSystemTime(new Date('2026-03-07T18:05:00.000Z'));
+    updateTaskAfterRun('task-ok', '2026-03-08T18:00:00.000Z', 'ok');
+    vi.setSystemTime(new Date('2026-03-08T09:15:00.000Z'));
+
+    const enqueueTask = vi.fn();
+
+    startSchedulerLoop({
+      registeredGroups: () => ({}),
+      getSessions: () => ({}),
+      queue: { enqueueTask } as any,
+      onProcess: () => {},
+      sendMessage: async () => {},
+    });
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    // Check which tasks were enqueued
+    const enqueuedIds = enqueueTask.mock.calls.map((c: unknown[]) => c[1]);
+
+    // The missed task should have been enqueued
+    expect(enqueuedIds).toContain('task-missed');
+
+    // The ok task should NOT have been enqueued (it ran on schedule)
+    expect(enqueuedIds).not.toContain('task-ok');
   });
 
   it('computeNextRun returns null for once-tasks', () => {

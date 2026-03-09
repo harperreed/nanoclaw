@@ -9,7 +9,7 @@ RUN cargo install --git https://github.com/harperreed/micropub
 
 FROM node:22-slim
 
-# Install system dependencies
+# Install system dependencies for Chromium and PDF tools
 RUN apt-get update && apt-get install -y \
     chromium \
     fonts-liberation \
@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y \
     git \
     jq \
     sqlite3 \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Chromium path for agent-browser
@@ -61,7 +62,7 @@ RUN set -ex; \
               grep '"browser_download_url"' | grep "${pattern}" | head -1 | cut -d'"' -f4); \
         if [ -z "$url" ]; then echo "WARN: no asset matching ${pattern} for ${repo}"; return 0; fi; \
         tmpdir=$(mktemp -d); \
-        curl -fsSL "$url" | tar xz -C "$tmpdir"; \
+        if ! curl -fsSL "$url" | tar xz -C "$tmpdir"; then echo "WARN: failed to download ${repo}"; rm -rf "$tmpdir"; return 0; fi; \
         if [ -n "$name" ]; then \
             bin=$(find "$tmpdir" -maxdepth 3 -type f | head -1); \
             [ -n "$bin" ] && install -m755 "$bin" "/usr/local/bin/${name}"; \
@@ -100,6 +101,10 @@ COPY agent-runner/ ./
 
 # Build TypeScript
 RUN npm run build
+
+# Install pdf-reader CLI
+COPY skills/pdf-reader/pdf-reader /usr/local/bin/pdf-reader
+RUN chmod +x /usr/local/bin/pdf-reader
 
 # Create workspace directories
 RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/messages /workspace/ipc/tasks /workspace/ipc/input
