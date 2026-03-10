@@ -222,7 +222,7 @@ export class WhatsAppChannel implements Channel {
                 fs.mkdirSync(attachDir, { recursive: true });
                 const filename = path.basename(
                   normalized.documentMessage.fileName ||
-                  `doc-${Date.now()}.pdf`,
+                    `doc-${Date.now()}.pdf`,
                 );
                 const filePath = path.join(attachDir, filename);
                 fs.writeFileSync(filePath, buffer as Buffer);
@@ -367,7 +367,13 @@ export class WhatsAppChannel implements Channel {
         const looksLikeHtml = /^\s*(<[!?]|Found\.|<!DOCTYPE|<html)/i.test(head);
         if (looksLikeText || looksLikeHtml) {
           logger.warn(
-            { jid, filePath, mimetype, size: buffer.length, preview: head.slice(0, 200) },
+            {
+              jid,
+              filePath,
+              mimetype,
+              size: buffer.length,
+              preview: head.slice(0, 200),
+            },
             'File appears to be text, not binary — likely a redirect or error page',
           );
           return;

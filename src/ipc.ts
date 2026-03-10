@@ -35,6 +35,7 @@ export interface IpcDeps {
     availableGroups: AvailableGroup[],
     registeredJids: Set<string>,
   ) => void;
+  statusHeartbeat?: () => void;
 }
 
 let ipcWatcherRunning = false;
@@ -122,16 +123,12 @@ export function startIpcWatcher(deps: IpcDeps): void {
                 const fileTargetGroup = registeredGroups[data.chatJid];
                 if (
                   isMain ||
-                  (fileTargetGroup &&
-                    fileTargetGroup.folder === sourceGroup)
+                  (fileTargetGroup && fileTargetGroup.folder === sourceGroup)
                 ) {
                   // Resolve container path to host path.
                   // The container sees /workspace/group/ which maps to GROUPS_DIR/{folder}/
                   const groupDir = path.join(GROUPS_DIR, sourceGroup);
-                  const hostPath = path.resolve(
-                    groupDir,
-                    data.filePath,
-                  );
+                  const hostPath = path.resolve(groupDir, data.filePath);
                   // Security: ensure resolved path stays within the group directory
                   const rel = path.relative(groupDir, hostPath);
                   if (rel.startsWith('..') || path.isAbsolute(rel)) {
@@ -253,6 +250,9 @@ export function startIpcWatcher(deps: IpcDeps): void {
         logger.error({ err, sourceGroup }, 'Error reading IPC tasks directory');
       }
     }
+
+    // Run status tracker heartbeat on each poll cycle
+    deps.statusHeartbeat?.();
 
     setTimeout(processIpcFiles, IPC_POLL_INTERVAL);
   };

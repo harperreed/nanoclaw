@@ -129,6 +129,12 @@ export class GroupQueue {
     );
   }
 
+  /** Check whether a container is currently alive for a given group JID. */
+  isActive(groupJid: string): boolean {
+    const state = this.groups.get(groupJid);
+    return !!(state?.process && !state.process.killed);
+  }
+
   registerProcess(
     groupJid: string,
     proc: ChildProcess,

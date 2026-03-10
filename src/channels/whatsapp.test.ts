@@ -46,7 +46,11 @@ vi.mock('fs', async () => {
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
       writeFileSync: vi.fn(),
-      readFileSync: vi.fn(() => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xd8])),
+      readFileSync: vi.fn(() =>
+        Buffer.from([
+          0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xd8,
+        ]),
+      ),
     },
   };
 });
@@ -96,9 +100,7 @@ vi.mock('@whiskeysockets/baileys', () => {
       timedOut: 408,
       restartRequired: 515,
     },
-    downloadMediaMessage: vi
-      .fn()
-      .mockResolvedValue(Buffer.from('pdf-data')),
+    downloadMediaMessage: vi.fn().mockResolvedValue(Buffer.from('pdf-data')),
     fetchLatestWaWebVersion: vi
       .fn()
       .mockResolvedValue({ version: [2, 3000, 0] }),
@@ -1195,11 +1197,7 @@ describe('WhatsAppChannel', () => {
       const channel = new WhatsAppChannel(opts);
       await connectChannel(channel);
 
-      await channel.sendFile(
-        'registered@g.us',
-        '/tmp/clip.mp4',
-        'video/mp4',
-      );
+      await channel.sendFile('registered@g.us', '/tmp/clip.mp4', 'video/mp4');
 
       expect(fakeSocket.sendMessage).toHaveBeenCalledWith('registered@g.us', {
         video: expect.any(Buffer),
@@ -1213,11 +1211,7 @@ describe('WhatsAppChannel', () => {
       const channel = new WhatsAppChannel(opts);
       await connectChannel(channel);
 
-      await channel.sendFile(
-        'registered@g.us',
-        '/tmp/song.mp3',
-        'audio/mpeg',
-      );
+      await channel.sendFile('registered@g.us', '/tmp/song.mp3', 'audio/mpeg');
 
       expect(fakeSocket.sendMessage).toHaveBeenCalledWith('registered@g.us', {
         audio: expect.any(Buffer),
@@ -1232,7 +1226,9 @@ describe('WhatsAppChannel', () => {
 
       const fs = await import('fs');
       vi.mocked(fs.default.readFileSync).mockReturnValueOnce(
-        Buffer.from('Found. Redirecting to https://example.com/image.jpg') as never,
+        Buffer.from(
+          'Found. Redirecting to https://example.com/image.jpg',
+        ) as never,
       );
 
       await channel.sendFile(
@@ -1256,7 +1252,9 @@ describe('WhatsAppChannel', () => {
 
       const fs = await import('fs');
       vi.mocked(fs.default.readFileSync).mockReturnValueOnce(
-        Buffer.from('<!DOCTYPE html><html><body>404 Not Found</body></html>') as never,
+        Buffer.from(
+          '<!DOCTYPE html><html><body>404 Not Found</body></html>',
+        ) as never,
       );
 
       await channel.sendFile(
@@ -1278,11 +1276,7 @@ describe('WhatsAppChannel', () => {
         Buffer.from('name,value\nfoo,42') as never,
       );
 
-      await channel.sendFile(
-        'registered@g.us',
-        '/tmp/data.csv',
-        'text/csv',
-      );
+      await channel.sendFile('registered@g.us', '/tmp/data.csv', 'text/csv');
 
       expect(fakeSocket.sendMessage).toHaveBeenCalledWith('registered@g.us', {
         document: expect.any(Buffer),

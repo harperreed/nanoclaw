@@ -15,7 +15,8 @@ import {
 
 // Use UTC timezone for predictable cron calculations in tests
 vi.mock('./config.js', async () => {
-  const actual = await vi.importActual<typeof import('./config.js')>('./config.js');
+  const actual =
+    await vi.importActual<typeof import('./config.js')>('./config.js');
   return { ...actual, TIMEZONE: 'UTC' };
 });
 

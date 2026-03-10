@@ -110,7 +110,8 @@ RUN chmod +x /usr/local/bin/pdf-reader
 RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/messages /workspace/ipc/tasks /workspace/ipc/input
 
 # Create entrypoint script
-# Secrets are passed via stdin JSON — temp file is deleted immediately after Node reads it
+# Container input (prompt, group info) is passed via stdin JSON.
+# Credentials are injected by the host's credential proxy — never passed here.
 # Follow-up messages arrive via IPC files in /workspace/ipc/input/
 # Dangling-symlink cleanup: some tools (gsuite-mcp, msgvault) have symlinks
 # to /workspace/extra/ paths that only exist when the group has additionalMounts.

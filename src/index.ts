@@ -3,11 +3,13 @@ import path from 'path';
 
 import {
   ASSISTANT_NAME,
+  CREDENTIAL_PROXY_PORT,
   IDLE_TIMEOUT,
   POLL_INTERVAL,
   TIMEZONE,
   TRIGGER_PATTERN,
 } from './config.js';
+import { startCredentialProxy } from './credential-proxy.js';
 import './channels/index.js';
 import {
   getChannelFactory,
@@ -22,6 +24,7 @@ import {
 import {
   cleanupOrphans,
   ensureContainerRuntimeRunning,
+  PROXY_BIND_HOST,
 } from './container-runtime.js';
 import {
   getAllChats,
@@ -51,6 +54,7 @@ import {
   shouldDropMessage,
 } from './sender-allowlist.js';
 import { startSchedulerLoop } from './task-scheduler.js';
+import { StatusTracker } from './status-tracker.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
 
@@ -65,6 +69,7 @@ let messageLoopRunning = false;
 
 const channels: Channel[] = [];
 const queue = new GroupQueue();
+let statusTracker: StatusTracker;
 
 function loadState(): void {
   lastTimestamp = getRouterState('last_timestamp') || '';
@@ -173,6 +178,19 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!hasTrigger) return true;
   }
 
+  // Track message lifecycle — markReceived is idempotent so safe for recovery path too
+  for (const msg of missedMessages) {
+    statusTracker.markReceived(msg.id, chatJid, false);
+  }
+
+  // Mark user messages as thinking (container is about to spawn)
+  const userMessages = missedMessages.filter(
+    (m) => !m.is_from_me && !m.is_bot_message,
+  );
+  for (const msg of userMessages) {
+    statusTracker.markThinking(msg.id);
+  }
+
   const prompt = formatMessages(missedMessages, TIMEZONE);
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
@@ -204,10 +222,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await channel.setTyping?.(chatJid, true);
   let hadError = false;
   let outputSentToUser = false;
+  let firstOutputSeen = false;
 
   const output = await runAgent(group, prompt, chatJid, async (result) => {
     // Streaming output callback — called for each agent result
     if (result.result) {
+      if (!firstOutputSeen) {
+        firstOutputSeen = true;
+        for (const um of userMessages) {
+          statusTracker.markWorking(um.id);
+        }
+      }
       const raw =
         typeof result.result === 'string'
           ? result.result
@@ -224,6 +249,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
 
     if (result.status === 'success') {
+      statusTracker.markAllDone(chatJid);
       queue.notifyIdle(chatJid);
     }
 
@@ -243,6 +269,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         { group: group.name },
         'Agent error after output was sent, skipping cursor rollback to prevent duplicates',
       );
+      statusTracker.markAllDone(chatJid);
       return true;
     }
     // Roll back cursor so retries can re-process these messages
@@ -251,6 +278,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     logger.warn(
       { group: group.name },
       'Agent error, rolled back message cursor for retry',
+    );
+    statusTracker.markAllFailed(
+      chatJid,
+      'Task crashed \u{2014} retrying.',
     );
     return false;
   }
@@ -407,6 +438,11 @@ async function startMessageLoop(): Promise<void> {
             if (!hasTrigger) continue;
           }
 
+          // Track user messages for status lifecycle
+          for (const msg of groupMessages) {
+            statusTracker.markReceived(msg.id, chatJid, false);
+          }
+
           // Pull all messages since lastAgentTimestamp so non-trigger
           // context that accumulated between triggers is included.
           const allPending = getMessagesSince(
@@ -419,6 +455,10 @@ async function startMessageLoop(): Promise<void> {
           const formatted = formatMessages(messagesToSend, TIMEZONE);
 
           if (queue.sendMessage(chatJid, formatted)) {
+            // Mark as thinking since message was piped to active container
+            for (const msg of groupMessages) {
+              statusTracker.markThinking(msg.id);
+            }
             logger.debug(
               { chatJid, count: messagesToSend.length },
               'Piped messages to active container',
@@ -474,9 +514,36 @@ async function main(): Promise<void> {
   logger.info('Database initialized');
   loadState();
 
+  // Start credential proxy (containers route API calls through this)
+  const proxyServer = await startCredentialProxy(
+    CREDENTIAL_PROXY_PORT,
+    PROXY_BIND_HOST,
+  );
+
+  // Initialize status tracker (uses channels via callbacks, channels don't need to be connected yet)
+  statusTracker = new StatusTracker({
+    reactToMessage: async (chatJid, messageId, emoji, fromMe) => {
+      const channel = findChannel(channels, chatJid);
+      if (!channel?.reactToMessage) return;
+      await channel.reactToMessage(chatJid, messageId, emoji, fromMe);
+    },
+    sendMessage: async (chatJid, text) => {
+      const channel = findChannel(channels, chatJid);
+      if (!channel) return;
+      await channel.sendMessage(chatJid, text);
+    },
+    isMainGroup: (chatJid) => {
+      const group = registeredGroups[chatJid];
+      return group?.isMain === true;
+    },
+    isContainerAlive: (chatJid) => queue.isActive(chatJid),
+  });
+
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
+    proxyServer.close();
+    await statusTracker.shutdown();
     await queue.shutdown(10000);
     for (const ch of channels) await ch.disconnect();
     process.exit(0);
@@ -589,7 +656,10 @@ async function main(): Promise<void> {
     getAvailableGroups,
     writeGroupsSnapshot: (gf, im, ag, rj) =>
       writeGroupsSnapshot(gf, im, ag, rj),
+    statusHeartbeat: () => statusTracker.heartbeatCheck(),
   });
+  // Recover status tracker AFTER channels connect so recovery reactions can be sent
+  await statusTracker.recover();
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
   startMessageLoop().catch((err) => {
