@@ -21,10 +21,7 @@ vi.mock('./logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import {
-  StatusTracker,
-  StatusTrackerDeps,
-} from './status-tracker.js';
+import { StatusTracker, StatusTrackerDeps } from './status-tracker.js';
 
 function makeDeps() {
   return {
@@ -123,16 +120,8 @@ describe('StatusTracker', () => {
 
   describe('duplicate tracking', () => {
     it('rejects duplicate markReceived for same messageId', async () => {
-      const first = tracker.markReceived(
-        'msg1',
-        'main@s.whatsapp.net',
-        false,
-      );
-      const second = tracker.markReceived(
-        'msg1',
-        'main@s.whatsapp.net',
-        false,
-      );
+      const first = tracker.markReceived('msg1', 'main@s.whatsapp.net', false);
+      const second = tracker.markReceived('msg1', 'main@s.whatsapp.net', false);
 
       expect(first).toBe(true);
       expect(second).toBe(false);
@@ -233,9 +222,7 @@ describe('StatusTracker', () => {
           trackedAt: 3000,
         },
       ]);
-      (fs.default.existsSync as ReturnType<typeof vi.fn>).mockReturnValue(
-        true,
-      );
+      (fs.default.existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
       (fs.default.readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(
         persisted,
       );
@@ -276,9 +263,7 @@ describe('StatusTracker', () => {
           trackedAt: 1000,
         },
       ]);
-      (fs.default.existsSync as ReturnType<typeof vi.fn>).mockReturnValue(
-        true,
-      );
+      (fs.default.existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
       (fs.default.readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(
         persisted,
       );

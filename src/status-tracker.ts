@@ -124,10 +124,7 @@ export class StatusTracker {
       this.deps
         .sendMessage(chatJid, `[system] ${errorMessage}`)
         .catch((err) =>
-          logger.error(
-            { chatJid, err },
-            'Failed to send status error message',
-          ),
+          logger.error({ chatJid, err }, 'Failed to send status error message'),
         );
     }
   }
@@ -229,10 +226,7 @@ export class StatusTracker {
             },
             'Heartbeat: RECEIVED message stuck with dead container',
           );
-          this.markAllFailed(
-            msg.chatJid,
-            'Task crashed \u{2014} retrying.',
-          );
+          this.markAllFailed(msg.chatJid, 'Task crashed \u{2014} retrying.');
           return;
         }
         continue;
@@ -328,8 +322,7 @@ export class StatusTracker {
             );
             return;
           } else {
-            const delay =
-              REACTION_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+            const delay = REACTION_BASE_DELAY_MS * Math.pow(2, attempt - 1);
             logger.warn(
               { messageId: msg.messageId, emoji, attempt, delay, err },
               'Reaction send failed, retrying',

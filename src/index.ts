@@ -279,10 +279,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       { group: group.name },
       'Agent error, rolled back message cursor for retry',
     );
-    statusTracker.markAllFailed(
-      chatJid,
-      'Task crashed \u{2014} retrying.',
-    );
+    statusTracker.markAllFailed(chatJid, 'Task crashed \u{2014} retrying.');
     return false;
   }
 
