@@ -82,7 +82,8 @@ RUN set -ex; \
     fetch harperreed/toki        "Linux_arm64.tar.gz"; \
     fetch 2389-research/gsuite-mcp "linux_arm64.tar.gz"; \
     fetch wesm/msgvault          "linux_arm64.tar.gz"; \
-    fetch 2389-research/pulse    "Linux_arm64.tar.gz"
+    fetch 2389-research/pulse    "Linux_arm64.tar.gz"; \
+    fetch harperreed/push-cli    "Linux_arm64.tar.gz"  push
 
 # Install agent-browser and claude-code globally
 RUN npm install -g agent-browser @anthropic-ai/claude-code
