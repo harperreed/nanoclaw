@@ -36,6 +36,7 @@ export interface IpcDeps {
     registeredJids: Set<string>,
   ) => void;
   statusHeartbeat?: () => void;
+  onTasksChanged: () => void;
 }
 
 let ipcWatcherRunning = false;
@@ -378,6 +379,7 @@ export async function processTaskIpc(
           { taskId, sourceGroup, targetFolder, contextMode },
           'Task created via IPC',
         );
+        deps.onTasksChanged();
       }
       break;
 
@@ -390,6 +392,7 @@ export async function processTaskIpc(
             { taskId: data.taskId, sourceGroup },
             'Task paused via IPC',
           );
+          deps.onTasksChanged();
         } else {
           logger.warn(
             { taskId: data.taskId, sourceGroup },
@@ -408,6 +411,7 @@ export async function processTaskIpc(
             { taskId: data.taskId, sourceGroup },
             'Task resumed via IPC',
           );
+          deps.onTasksChanged();
         } else {
           logger.warn(
             { taskId: data.taskId, sourceGroup },
@@ -426,6 +430,7 @@ export async function processTaskIpc(
             { taskId: data.taskId, sourceGroup },
             'Task cancelled via IPC',
           );
+          deps.onTasksChanged();
         } else {
           logger.warn(
             { taskId: data.taskId, sourceGroup },
@@ -496,6 +501,7 @@ export async function processTaskIpc(
           { taskId: data.taskId, sourceGroup, updates },
           'Task updated via IPC',
         );
+        deps.onTasksChanged();
       }
       break;
 
