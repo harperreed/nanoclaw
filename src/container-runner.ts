@@ -4,6 +4,7 @@
  */
 import { ChildProcess, exec, spawn } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import {
@@ -297,6 +298,69 @@ function buildVolumeMounts(
   return mounts;
 }
 
+/**
+ * Rewrite individual file -v mounts (added by OneCLI SDK) into a single
+ * directory mount. Apple Container only supports directory mounts, so we
+ * copy the files into a temp directory and mount that instead.
+ */
+function rewriteFileMountsToDirectory(
+  args: string[],
+  containerName: string,
+): void {
+  const certsDir = path.join(os.tmpdir(), `nanoclaw-onecli-certs-${containerName}`);
+  const fileMountIndices: number[] = [];
+
+  // Find -v args that mount individual files (host path is a file, not a directory)
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== '-v') continue;
+    const mountArg = args[i + 1];
+    if (!mountArg) continue;
+    // Parse host:container or host:container:ro
+    const parts = mountArg.split(':');
+    if (parts.length < 2) continue;
+    const hostPath = parts[0];
+    try {
+      if (fs.statSync(hostPath).isFile()) {
+        fileMountIndices.push(i);
+      }
+    } catch {
+      // Path doesn't exist, skip
+    }
+  }
+
+  if (fileMountIndices.length === 0) return;
+
+  fs.mkdirSync(certsDir, { recursive: true });
+  const containerDir = '/tmp/onecli-certs';
+
+  // Copy files and update env var references
+  for (const idx of fileMountIndices) {
+    const mountArg = args[idx + 1];
+    const parts = mountArg.split(':');
+    const hostPath = parts[0];
+    const containerPath = parts.slice(1).join(':').replace(/:ro$/, '');
+    const fileName = path.basename(hostPath);
+
+    fs.copyFileSync(hostPath, path.join(certsDir, fileName));
+
+    // Update env vars that reference the old container path
+    const newContainerPath = `${containerDir}/${fileName}`;
+    for (let j = 0; j < args.length; j++) {
+      if (args[j] === '-e' && args[j + 1]?.includes(containerPath)) {
+        args[j + 1] = args[j + 1].replace(containerPath, newContainerPath);
+      }
+    }
+  }
+
+  // Remove the individual file mount args (in reverse order to preserve indices)
+  for (const idx of [...fileMountIndices].reverse()) {
+    args.splice(idx, 2); // Remove both -v and its value
+  }
+
+  // Add a single directory mount
+  args.push('-v', `${certsDir}:${containerDir}`);
+}
+
 async function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
@@ -315,6 +379,12 @@ async function buildContainerArgs(
   });
   if (onecliApplied) {
     logger.info({ containerName }, 'OneCLI gateway config applied');
+    // Apple Container only supports directory mounts, not individual file mounts.
+    // The OneCLI SDK adds -v file:file mounts for CA certificates.
+    // Consolidate them into a single directory mount.
+    if ((CONTAINER_RUNTIME_BIN as string) !== 'docker') {
+      rewriteFileMountsToDirectory(args, containerName);
+    }
   } else {
     logger.warn(
       { containerName },
