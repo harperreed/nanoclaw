@@ -47,7 +47,7 @@ function findBridgeIp(): string | null {
 }
 
 /**
- * Address the credential proxy binds to.
+ * Address the OneCLI gateway or credential proxy binds to.
  * Docker Desktop (macOS): 127.0.0.1 — the VM routes host.docker.internal to loopback.
  * Apple Container (macOS): bind to the bridge IP so containers can reach it.
  * Docker (Linux): bind to the docker0 bridge IP so only containers can reach it,
@@ -58,7 +58,7 @@ export const PROXY_BIND_HOST =
 
 function detectProxyBindHost(): string {
   if (os.platform() === 'darwin') {
-    // Apple Container: proxy must listen on the bridge IP, not loopback
+    // Apple Container: must listen on the bridge IP, not loopback
     if (CONTAINER_RUNTIME_BIN === 'container') {
       return findBridgeIp() || '0.0.0.0';
     }
