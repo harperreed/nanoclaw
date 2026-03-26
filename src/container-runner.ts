@@ -388,13 +388,18 @@ async function buildContainerArgs(
       // Consolidate them into a single directory mount.
       rewriteFileMountsToDirectory(args, containerName);
       // The OneCLI SDK uses "host.docker.internal" in proxy URLs, but Apple
-      // Container doesn't resolve that hostname. Replace with the actual bridge IP.
-      const gateway = CONTAINER_HOST_GATEWAY;
-      if (gateway !== 'host.docker.internal') {
-        for (let i = 0; i < args.length; i++) {
-          if (args[i] === '-e' && args[i + 1]?.includes('host.docker.internal')) {
-            args[i + 1] = args[i + 1].replaceAll('host.docker.internal', gateway);
-          }
+      // Container VMs can't resolve that hostname. Replace with the actual
+      // OneCLI host derived from ONECLI_URL (the gateway may be on a remote machine).
+      const onecliHost = new URL(ONECLI_URL).hostname;
+      for (let i = 0; i < args.length; i++) {
+        if (
+          args[i] === '-e' &&
+          args[i + 1]?.includes('host.docker.internal')
+        ) {
+          args[i + 1] = args[i + 1].replaceAll(
+            'host.docker.internal',
+            onecliHost,
+          );
         }
       }
     }
