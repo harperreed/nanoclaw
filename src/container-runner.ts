@@ -4,7 +4,6 @@
  */
 import { ChildProcess, exec, spawn } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 
 import {
@@ -12,10 +11,10 @@ import {
   CONTAINER_IMAGE,
   CONTAINER_MAX_OUTPUT_SIZE,
   CONTAINER_TIMEOUT,
+  CREDENTIAL_PROXY_PORT,
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
-  ONECLI_URL,
   TIMEZONE,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -27,11 +26,9 @@ import {
   readonlyMountArgs,
   stopContainer,
 } from './container-runtime.js';
-import { OneCLI } from '@onecli-sh/sdk';
+import { detectAuthMode } from './credential-proxy.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
-
-const onecli = new OneCLI({ url: ONECLI_URL });
 
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
@@ -298,116 +295,30 @@ function buildVolumeMounts(
   return mounts;
 }
 
-/**
- * Rewrite individual file -v mounts (added by OneCLI SDK) into a single
- * directory mount. Apple Container only supports directory mounts, so we
- * copy the files into a temp directory and mount that instead.
- */
-function rewriteFileMountsToDirectory(
-  args: string[],
-  containerName: string,
-): void {
-  const certsDir = path.join(
-    os.tmpdir(),
-    `nanoclaw-onecli-certs-${containerName}`,
-  );
-  const fileMountIndices: number[] = [];
-
-  // Find -v args that mount individual files (host path is a file, not a directory)
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] !== '-v') continue;
-    const mountArg = args[i + 1];
-    if (!mountArg) continue;
-    // Parse host:container or host:container:ro
-    const parts = mountArg.split(':');
-    if (parts.length < 2) continue;
-    const hostPath = parts[0];
-    try {
-      if (fs.statSync(hostPath).isFile()) {
-        fileMountIndices.push(i);
-      }
-    } catch {
-      // Path doesn't exist, skip
-    }
-  }
-
-  if (fileMountIndices.length === 0) return;
-
-  fs.mkdirSync(certsDir, { recursive: true });
-  const containerDir = '/tmp/onecli-certs';
-
-  // Copy files and update env var references
-  for (const idx of fileMountIndices) {
-    const mountArg = args[idx + 1];
-    const parts = mountArg.split(':');
-    const hostPath = parts[0];
-    const containerPath = parts.slice(1).join(':').replace(/:ro$/, '');
-    const fileName = path.basename(hostPath);
-
-    fs.copyFileSync(hostPath, path.join(certsDir, fileName));
-
-    // Update env vars that reference the old container path
-    const newContainerPath = `${containerDir}/${fileName}`;
-    for (let j = 0; j < args.length; j++) {
-      if (args[j] === '-e' && args[j + 1]?.includes(containerPath)) {
-        args[j + 1] = args[j + 1].replace(containerPath, newContainerPath);
-      }
-    }
-  }
-
-  // Remove the individual file mount args (in reverse order to preserve indices)
-  for (const idx of [...fileMountIndices].reverse()) {
-    args.splice(idx, 2); // Remove both -v and its value
-  }
-
-  // Add a single directory mount
-  args.push('-v', `${certsDir}:${containerDir}`);
-}
-
-async function buildContainerArgs(
+function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
-  agentIdentifier?: string,
-): Promise<string[]> {
+): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
 
-  // OneCLI gateway handles credential injection — containers never see real secrets.
-  // The gateway intercepts HTTPS traffic and injects API keys or OAuth tokens.
-  const onecliApplied = await onecli.applyContainerConfig(args, {
-    addHostMapping: false, // Nanoclaw already handles host gateway
-    agent: agentIdentifier,
-  });
-  if (onecliApplied) {
-    logger.info({ containerName }, 'OneCLI gateway config applied');
-    if ((CONTAINER_RUNTIME_BIN as string) !== 'docker') {
-      // Apple Container only supports directory mounts, not individual file mounts.
-      // The OneCLI SDK adds -v file:file mounts for CA certificates.
-      // Consolidate them into a single directory mount.
-      rewriteFileMountsToDirectory(args, containerName);
-      // The OneCLI SDK uses "host.docker.internal" in proxy URLs, but Apple
-      // Container VMs can't resolve that hostname. Replace with the actual
-      // OneCLI host derived from ONECLI_URL (the gateway may be on a remote machine).
-      const onecliHost = new URL(ONECLI_URL).hostname;
-      for (let i = 0; i < args.length; i++) {
-        if (
-          args[i] === '-e' &&
-          args[i + 1]?.includes('host.docker.internal')
-        ) {
-          args[i + 1] = args[i + 1].replaceAll(
-            'host.docker.internal',
-            onecliHost,
-          );
-        }
-      }
-    }
+  // Route API traffic through the credential proxy (containers never see real secrets)
+  args.push(
+    '-e',
+    `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}`,
+  );
+
+  // Mirror the host's auth method with a placeholder value.
+  // API key mode: SDK sends x-api-key, proxy replaces with real key.
+  // OAuth mode:   SDK exchanges placeholder token for temp API key,
+  //               proxy injects real OAuth token on that exchange request.
+  const authMode = detectAuthMode();
+  if (authMode === 'api-key') {
+    args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
   } else {
-    logger.warn(
-      { containerName },
-      'OneCLI gateway not reachable — container will have no credentials',
-    );
+    args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
   }
 
   // Runtime-specific args for host gateway resolution
@@ -453,15 +364,7 @@ export async function runContainerAgent(
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  // Main group uses the default OneCLI agent; others use their own agent.
-  const agentIdentifier = input.isMain
-    ? undefined
-    : group.folder.toLowerCase().replace(/_/g, '-');
-  const containerArgs = await buildContainerArgs(
-    mounts,
-    containerName,
-    agentIdentifier,
-  );
+  const containerArgs = buildContainerArgs(mounts, containerName);
 
   logger.debug(
     {
