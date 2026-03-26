@@ -307,7 +307,10 @@ function rewriteFileMountsToDirectory(
   args: string[],
   containerName: string,
 ): void {
-  const certsDir = path.join(os.tmpdir(), `nanoclaw-onecli-certs-${containerName}`);
+  const certsDir = path.join(
+    os.tmpdir(),
+    `nanoclaw-onecli-certs-${containerName}`,
+  );
   const fileMountIndices: number[] = [];
 
   // Find -v args that mount individual files (host path is a file, not a directory)
@@ -379,11 +382,21 @@ async function buildContainerArgs(
   });
   if (onecliApplied) {
     logger.info({ containerName }, 'OneCLI gateway config applied');
-    // Apple Container only supports directory mounts, not individual file mounts.
-    // The OneCLI SDK adds -v file:file mounts for CA certificates.
-    // Consolidate them into a single directory mount.
     if ((CONTAINER_RUNTIME_BIN as string) !== 'docker') {
+      // Apple Container only supports directory mounts, not individual file mounts.
+      // The OneCLI SDK adds -v file:file mounts for CA certificates.
+      // Consolidate them into a single directory mount.
       rewriteFileMountsToDirectory(args, containerName);
+      // The OneCLI SDK uses "host.docker.internal" in proxy URLs, but Apple
+      // Container doesn't resolve that hostname. Replace with the actual bridge IP.
+      const gateway = CONTAINER_HOST_GATEWAY;
+      if (gateway !== 'host.docker.internal') {
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === '-e' && args[i + 1]?.includes('host.docker.internal')) {
+            args[i + 1] = args[i + 1].replaceAll('host.docker.internal', gateway);
+          }
+        }
+      }
     }
   } else {
     logger.warn(
