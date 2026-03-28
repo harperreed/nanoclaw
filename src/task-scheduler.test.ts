@@ -188,14 +188,14 @@ describe('task scheduler', () => {
       status: 'active',
       created_at: '2026-03-01T00:00:00.000Z',
     });
-    // last_run needs to be from yesterday — but updateTaskAfterRun sets it to
+    // last_run needs to be from yesterday -- but updateTaskAfterRun sets it to
     // Date.now(). So we temporarily shift time back to simulate the prior run.
     vi.setSystemTime(new Date('2026-03-07T08:05:00.000Z'));
     updateTaskAfterRun('task-missed', '2026-03-09T08:00:00.000Z', 'ok');
     vi.setSystemTime(new Date('2026-03-08T09:15:00.000Z'));
 
     // Task whose next_run is in the future but ran on schedule
-    // (last_run covers the previous window) — should NOT be recovered
+    // (last_run covers the previous window) -- should NOT be recovered
     createTask({
       id: 'task-ok',
       group_folder: 'weather',
@@ -209,7 +209,7 @@ describe('task scheduler', () => {
       status: 'active',
       created_at: '2026-03-01T00:00:00.000Z',
     });
-    // Ran yesterday at 6pm — correctly on schedule
+    // Ran yesterday at 6pm -- correctly on schedule
     vi.setSystemTime(new Date('2026-03-07T18:05:00.000Z'));
     updateTaskAfterRun('task-ok', '2026-03-08T18:00:00.000Z', 'ok');
     vi.setSystemTime(new Date('2026-03-08T09:15:00.000Z'));
@@ -235,6 +235,7 @@ describe('task scheduler', () => {
     // The ok task should NOT have been enqueued (it ran on schedule)
     expect(enqueuedIds).not.toContain('task-ok');
   });
+
 
   it('computeNextRun returns null for once-tasks', () => {
     const task = {
