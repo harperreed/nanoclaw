@@ -236,7 +236,6 @@ describe('task scheduler', () => {
     expect(enqueuedIds).not.toContain('task-ok');
   });
 
-
   it('computeNextRun returns null for once-tasks', () => {
     const task = {
       id: 'once-test',
