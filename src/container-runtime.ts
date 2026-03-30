@@ -16,8 +16,17 @@ export const CONTAINER_RUNTIME_BIN = 'container';
  * Docker Desktop (macOS/Windows): host.docker.internal is built-in.
  * Apple Container (macOS): uses a vmnet bridge — detect the gateway IP.
  * Linux: host.docker.internal is added via --add-host in hostGatewayArgs().
+ *
+ * Lazy: deferred until first call so the bridge has time to come up
+ * after `container system start`. Cached after first resolution.
  */
-export const CONTAINER_HOST_GATEWAY = detectHostGateway();
+let _cachedHostGateway: string | null = null;
+export function CONTAINER_HOST_GATEWAY(): string {
+  if (!_cachedHostGateway) {
+    _cachedHostGateway = detectHostGateway();
+  }
+  return _cachedHostGateway;
+}
 
 function detectHostGateway(): string {
   // Apple Container on macOS: host.docker.internal doesn't exist.
@@ -52,9 +61,16 @@ function findBridgeIp(): string | null {
  * Apple Container (macOS): bind to the bridge IP so containers can reach it.
  * Docker (Linux): bind to the docker0 bridge IP so only containers can reach it,
  *   falling back to 0.0.0.0 if the interface isn't found.
+ *
+ * Lazy: same reason as CONTAINER_HOST_GATEWAY — bridge may not be up at import time.
  */
-export const PROXY_BIND_HOST =
-  process.env.CREDENTIAL_PROXY_HOST || detectProxyBindHost();
+let _cachedProxyBindHost: string | null = null;
+export function PROXY_BIND_HOST(): string {
+  if (_cachedProxyBindHost) return _cachedProxyBindHost;
+  _cachedProxyBindHost =
+    process.env.CREDENTIAL_PROXY_HOST || detectProxyBindHost();
+  return _cachedProxyBindHost;
+}
 
 function detectProxyBindHost(): string {
   if (os.platform() === 'darwin') {
@@ -152,6 +168,41 @@ export function ensureContainerRuntimeRunning(): void {
       });
     }
   }
+
+  // Apple Container: wait for the vmnet bridge to come up before resolving
+  // network addresses. The bridge can take a few seconds after `system start`.
+  if (os.platform() === 'darwin' && CONTAINER_RUNTIME_BIN === 'container') {
+    waitForBridge();
+  }
+}
+
+/**
+ * Poll for the Apple Container vmnet bridge interface to appear.
+ * Retries every 2s up to 5 times. If the bridge never appears, log a warning
+ * and continue — PROXY_BIND_HOST will fall back to 0.0.0.0.
+ */
+function waitForBridge(): void {
+  const maxAttempts = 5;
+  const intervalMs = 2000;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const ip = findBridgeIp();
+    if (ip) {
+      logger.info({ bridgeIp: ip, attempt }, 'Bridge network is ready');
+      return;
+    }
+    if (attempt < maxAttempts) {
+      logger.info(
+        { attempt, maxAttempts },
+        'Waiting for bridge network to come up...',
+      );
+      execSync(`sleep 2`);
+    }
+  }
+
+  logger.warn(
+    'Bridge network did not appear after polling — proxy will bind to 0.0.0.0',
+  );
 }
 
 /** Returns the shell command to remove a stopped container by name. */

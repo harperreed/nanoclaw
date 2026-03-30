@@ -592,7 +592,7 @@ async function main(): Promise<void> {
   // Start credential proxy (containers route API calls through this)
   const proxyServer = await startCredentialProxy(
     CREDENTIAL_PROXY_PORT,
-    PROXY_BIND_HOST,
+    PROXY_BIND_HOST(),
   );
 
   restoreRemoteControl();
