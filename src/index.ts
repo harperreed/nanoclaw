@@ -615,6 +615,7 @@ async function main(): Promise<void> {
     PROXY_BIND_HOST(),
   );
 
+
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');

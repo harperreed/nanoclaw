@@ -68,6 +68,8 @@ describe('removeContainer', () => {
     expect(removeContainer('nanoclaw-test-123')).toBe(
       `${CONTAINER_RUNTIME_BIN} delete nanoclaw-test-123`,
     );
+    expect(() => stopContainer('foo`id`')).toThrow('Invalid container name');
+    expect(mockExecSync).not.toHaveBeenCalled();
   });
 });
 
