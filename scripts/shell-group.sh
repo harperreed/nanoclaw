@@ -7,6 +7,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Require python3 for JSON parsing (settings.json, container_config)
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "Error: python3 is required but not found in PATH"
+  exit 1
+fi
+
 # --- Arg parsing: extract --shell flag, leave positional args ---
 SHELL_MODE=false
 ARGS=()
@@ -16,19 +22,21 @@ for arg in "$@"; do
     *) ARGS+=("$arg") ;;
   esac
 done
-set -- "${ARGS[@]}"
+# Bash 3.2 (macOS default) crashes on "${ARGS[@]}" when array is empty under set -u
+if [ "${#ARGS[@]}" -gt 0 ]; then set -- "${ARGS[@]}"; else set --; fi
 
 # --- Safe .env parsing (no eval) ---
 if [ -z "${NANOCLAW_BASE_DIR:-}" ] && [ -f "$PROJECT_ROOT/.env" ]; then
-  NANOCLAW_BASE_DIR=$(grep '^NANOCLAW_BASE_DIR=' "$PROJECT_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2-)
+  NANOCLAW_BASE_DIR=$(grep '^NANOCLAW_BASE_DIR=' "$PROJECT_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
 fi
 BASE_DIR="${NANOCLAW_BASE_DIR:-$PROJECT_ROOT}"
 DB="$BASE_DIR/store/messages.db"
 GROUPS_DIR="$BASE_DIR/groups"
 DATA_DIR="$BASE_DIR/data"
 
-TZ=$(grep '^TZ=' "$PROJECT_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2-)
-CREDENTIAL_PROXY_PORT=$(grep '^CREDENTIAL_PROXY_PORT=' "$PROJECT_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2-)
+TZ=$(grep '^TZ=' "$PROJECT_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
+TZ="${TZ:-UTC}"
+CREDENTIAL_PROXY_PORT=$(grep '^CREDENTIAL_PROXY_PORT=' "$PROJECT_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
 CREDENTIAL_PROXY_PORT="${CREDENTIAL_PROXY_PORT:-7424}"
 
 # Detect auth mode: if ANTHROPIC_API_KEY is set in .env, use api-key; otherwise oauth
@@ -58,19 +66,19 @@ if [[ ! "$FOLDER" =~ ^[a-zA-Z0-9_-]+$ ]]; then
   exit 1
 fi
 
-# --- Look up group in DB (parameterized via sanitized input) ---
-ROW=$(sqlite3 "$DB" "SELECT name, folder, COALESCE(is_main, 0), container_config FROM registered_groups WHERE folder = '$FOLDER' LIMIT 1;")
-if [ -z "$ROW" ]; then
+# --- Look up group in DB ---
+# Separate queries avoid pipe-in-JSON truncation (container_config is JSON and may contain |)
+# Input is sanitized above to ^[a-zA-Z0-9_-]+$ so interpolation is safe.
+NAME=$(sqlite3 "$DB" "SELECT name FROM registered_groups WHERE folder = '$FOLDER' LIMIT 1;")
+if [ -z "$NAME" ]; then
   echo "Error: group '$FOLDER' not found."
   echo ""
   echo "Available groups:"
   sqlite3 "$DB" "SELECT '  ' || folder || ' (' || name || ')' || CASE WHEN COALESCE(is_main, 0) = 1 THEN ' [main]' ELSE '' END FROM registered_groups ORDER BY folder;"
   exit 1
 fi
-
-NAME=$(echo "$ROW" | cut -d'|' -f1)
-IS_MAIN=$(echo "$ROW" | cut -d'|' -f3)
-CONTAINER_CONFIG=$(echo "$ROW" | cut -d'|' -f4)
+IS_MAIN=$(sqlite3 "$DB" "SELECT COALESCE(is_main, 0) FROM registered_groups WHERE folder = '$FOLDER' LIMIT 1;")
+CONTAINER_CONFIG=$(sqlite3 "$DB" "SELECT container_config FROM registered_groups WHERE folder = '$FOLDER' LIMIT 1;")
 
 if [ "$SHELL_MODE" = true ]; then
   ENTRYPOINT="/bin/bash"
@@ -85,17 +93,13 @@ fi
 echo ""
 
 # --- Detect bridge IP (Apple Container vmnet bridge) ---
-BRIDGE_IP=""
-for iface_line in $(ifconfig 2>/dev/null | grep -A2 '^bridge' | grep 'inet 192\.168\.64\.' | head -1); do
-  if [[ "$iface_line" =~ ^192\.168\.64\.[0-9]+ ]]; then
-    BRIDGE_IP="$iface_line"
-    break
-  fi
-done
-if [ -z "$BRIDGE_IP" ]; then
-  # Fallback: parse more carefully
-  BRIDGE_IP=$(ifconfig 2>/dev/null | grep -A5 '^bridge' | grep 'inet ' | awk '{print $2}' | grep '^192\.168\.64\.' | head -1)
-fi
+# Apple Container creates bridge100+ with a 192.168.64.x subnet.
+# Same detection logic as container-runtime.ts findBridgeIp().
+BRIDGE_IP=$(ifconfig 2>/dev/null | awk '
+  /^bridge[0-9]+:/ { iface=1; next }
+  /^[^ \t]/ { iface=0 }
+  iface && /inet 192\.168\.64\./ { print $2; exit }
+')
 if [ -z "$BRIDGE_IP" ]; then
   echo "Warning: Could not detect Apple Container bridge IP. Credential proxy may not work."
   BRIDGE_IP="192.168.64.1"
@@ -238,7 +242,7 @@ fi
 
 # --- Container naming ---
 TIMESTAMP=$(date +%s)
-SAFE_NAME=$(echo "$FOLDER" | tr -cd 'a-zA-Z0-9-')
+SAFE_NAME=$(echo "$FOLDER" | tr -cd 'a-zA-Z0-9_-')
 CONTAINER_NAME="nanoclaw-shell-${SAFE_NAME}-${TIMESTAMP}"
 
 WORKDIR="/workspace/group"
