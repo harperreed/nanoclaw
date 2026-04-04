@@ -1,12 +1,6 @@
 # NanoClaw Agent Container
 # Runs Claude Agent SDK in isolated Linux VM with browser automation
 
-# Builder stage: compile Rust binaries from source (no pre-built releases)
-FROM rust:slim-bookworm AS rust-builder
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
-RUN cargo install --git https://github.com/graphwork/workgraph
-RUN cargo install --git https://github.com/harperreed/micropub
-
 FROM node:22-slim
 
 # Install system dependencies for Chromium and PDF tools
@@ -48,10 +42,6 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin s
 # Install Python via uv to a system-wide location accessible by the node user
 ENV UV_PYTHON_INSTALL_DIR=/usr/local/uv/python
 RUN uv python install 3
-
-# Copy compiled Rust binaries from builder
-COPY --from=rust-builder /usr/local/cargo/bin/wg /usr/local/bin/wg
-COPY --from=rust-builder /usr/local/cargo/bin/micropub /usr/local/bin/micropub
 
 # Install Harper's tools from latest GitHub releases (fetched dynamically at build time).
 # fetch <repo> <asset-pattern> [target-binary-name]  — for .tar.gz assets

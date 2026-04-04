@@ -61,6 +61,8 @@ Configured in `containerConfig.additionalMounts`. Mounted at `/workspace/extra/{
 | pa | `/workspace/extra/.local-share-gsuite-mcp` | `/Users/harper/.local/share/gsuite-mcp` | read-only |
 | health | `/workspace/extra/healthdata` | `/Users/harper/Public/src/personal/healthdata` | read-only |
 | 2389 | `/workspace/extra/personal-os` | `/Users/harper/Public/agent/groups/personal-os` | read-only |
+| finances | `/workspace/extra/finances` | `/Users/harper/Dropbox/Documents/Personal/finances` | read-write |
+| finances | `/workspace/extra/.msgvault` | `/Users/harper/.msgvault` | read-write |
 
 Mount security is controlled by `~/.config/nanoclaw/mount-allowlist.json` (never mounted into containers).
 
