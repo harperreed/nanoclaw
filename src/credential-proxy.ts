@@ -67,7 +67,11 @@ function proxyRequest(
   opts: RequestOptions,
   body: Buffer,
   makeRequest: typeof httpsRequest,
-): Promise<{ status: number; headers: IncomingMessage['headers']; body: Buffer }> {
+): Promise<{
+  status: number;
+  headers: IncomingMessage['headers'];
+  body: Buffer;
+}> {
   return new Promise((resolve, reject) => {
     const upstream = makeRequest(opts, (upRes) => {
       const chunks: Buffer[] = [];
@@ -105,7 +109,10 @@ export function startCredentialProxy(
   const fallbacks = loadFallbackTokens();
   const tokenPool: NamedToken[] = [];
   const seen = new Set<string>();
-  const primaryEntry: NamedToken = { name: 'primary (.env)', token: primaryToken };
+  const primaryEntry: NamedToken = {
+    name: 'primary (.env)',
+    token: primaryToken,
+  };
   for (const entry of [primaryEntry, ...fallbacks]) {
     if (entry.token && !seen.has(entry.token)) {
       tokenPool.push(entry);
@@ -189,7 +196,10 @@ export function startCredentialProxy(
             },
           );
           upstream.on('error', (err) => {
-            logger.error({ err, url: req.url }, 'Credential proxy upstream error');
+            logger.error(
+              { err, url: req.url },
+              'Credential proxy upstream error',
+            );
             if (!res.headersSent) {
               res.writeHead(502);
               res.end('Bad Gateway');
@@ -253,7 +263,10 @@ export function startCredentialProxy(
             res.end(result.body);
             return;
           } catch (err) {
-            logger.error({ err, url: req.url }, 'Credential proxy upstream error');
+            logger.error(
+              { err, url: req.url },
+              'Credential proxy upstream error',
+            );
             if (!res.headersSent) {
               res.writeHead(502);
               res.end('Bad Gateway');
