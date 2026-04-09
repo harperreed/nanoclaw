@@ -359,13 +359,16 @@ git checkout -b "$BRANCH_NAME" main
 info "Applying ${#UPSTREAM_ONLY[@]} upstream-only changes..."
 
 for file in "${UPSTREAM_ONLY[@]}"; do
-  git checkout upstream/main -- "$file"
+  # Create parent directory if needed (file may be new from upstream)
+  mkdir -p "$(dirname "$file")"
+  # Use git show to write the file (works for both new and existing files)
+  git show "upstream/main:${file}" > "$file"
+  git add "$file"
   echo "  ✓ ${file}"
 done
 
 # ── Commit ───────────────────────────────────────────────────────────────────
 
-git add -A
 git commit -m "$(cat <<EOF
 feat: reconcile upstream changes (${TODAY})
 
