@@ -82,11 +82,16 @@ USAGE
 
 DRY_RUN=false
 SHOW_FILE=""
+AUTO_YES=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run)
       DRY_RUN=true
+      shift
+      ;;
+    --yes|-y)
+      AUTO_YES=true
       shift
       ;;
     --show)
@@ -331,10 +336,12 @@ echo "  • Auto-apply ${#UPSTREAM_ONLY[@]} upstream-only file(s)"
 echo "  • Commit the changes"
 echo ""
 
-read -r -p "Proceed? [y/N] " confirm < /dev/tty
-if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
-  info "Aborted."
-  exit 0
+if [ "$AUTO_YES" = false ]; then
+  read -r -p "Proceed? [y/N] " confirm < /dev/tty
+  if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+    info "Aborted."
+    exit 0
+  fi
 fi
 
 # ── Create Branch ────────────────────────────────────────────────────────────
