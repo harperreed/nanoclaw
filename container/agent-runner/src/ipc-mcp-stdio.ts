@@ -68,113 +68,6 @@ server.tool(
 );
 
 server.tool(
-  'react_to_message',
-  'React to a specific message with an emoji. Use the message ID from the conversation context (the id attribute on <message> tags).',
-  {
-    message_id: z.string().describe('The message ID from conversation context (id attribute on <message> tags)'),
-    emoji: z.string().describe('The emoji to react with (e.g. "👍", "❤️", "😂")'),
-    chat_jid: z.string().optional().describe('Target chat JID. Defaults to the current group.'),
-  },
-  async (args) => {
-    const targetJid = args.chat_jid || chatJid;
-
-    const data = {
-      type: 'react_to_message',
-      chatJid: targetJid,
-      messageId: args.message_id,
-      emoji: args.emoji,
-      groupFolder,
-      timestamp: new Date().toISOString(),
-    };
-
-    writeIpcFile(MESSAGES_DIR, data);
-
-    return { content: [{ type: 'text' as const, text: `Reacted with ${args.emoji}` }] };
-  },
-);
-
-server.tool(
-  'send_file',
-  `Send a file to the user or group. Supports images, documents, audio, and video. The file must exist in your workspace.
-
-Common use cases:
-- Send a generated chart or screenshot
-- Share a PDF or document you created
-- Send an image you downloaded or processed
-
-The mimetype is auto-detected from the extension if not provided. Supported types include:
-- Images: image/png, image/jpeg, image/gif, image/webp
-- Documents: application/pdf, text/plain, text/csv
-- Audio: audio/mpeg, audio/ogg
-- Video: video/mp4`,
-  {
-    file_path: z.string().describe('Path to the file relative to your workspace (e.g., "output/chart.png", "attachments/report.pdf")'),
-    caption: z.string().optional().describe('Optional caption or description to send with the file'),
-    mimetype: z.string().optional().describe('MIME type override (auto-detected from extension if omitted)'),
-    chat_jid: z.string().optional().describe('Target chat JID. Defaults to the current group.'),
-  },
-  async (args) => {
-    // Resolve the file path relative to /workspace/group (the agent's cwd)
-    const resolvedPath = path.resolve('/workspace/group', args.file_path);
-
-    // Security: must stay within /workspace/group
-    if (!resolvedPath.startsWith('/workspace/group/')) {
-      return {
-        content: [{ type: 'text' as const, text: `File path must be within your workspace. Got: ${args.file_path}` }],
-        isError: true,
-      };
-    }
-
-    if (!fs.existsSync(resolvedPath)) {
-      return {
-        content: [{ type: 'text' as const, text: `File not found: ${args.file_path}` }],
-        isError: true,
-      };
-    }
-
-    // Auto-detect mimetype from extension if not provided
-    const ext = path.extname(args.file_path).toLowerCase();
-    const mimeMap: Record<string, string> = {
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.webp': 'image/webp',
-      '.svg': 'image/svg+xml',
-      '.pdf': 'application/pdf',
-      '.txt': 'text/plain',
-      '.csv': 'text/csv',
-      '.json': 'application/json',
-      '.mp3': 'audio/mpeg',
-      '.ogg': 'audio/ogg',
-      '.mp4': 'video/mp4',
-      '.zip': 'application/zip',
-      '.html': 'text/html',
-    };
-    const mimetype = args.mimetype || mimeMap[ext] || 'application/octet-stream';
-
-    const targetJid = args.chat_jid || chatJid;
-
-    // The host resolves this relative path against the group's directory
-    const relativePath = path.relative('/workspace/group', resolvedPath);
-
-    const data = {
-      type: 'send_file',
-      chatJid: targetJid,
-      filePath: relativePath,
-      mimetype,
-      caption: args.caption || undefined,
-      groupFolder,
-      timestamp: new Date().toISOString(),
-    };
-
-    writeIpcFile(MESSAGES_DIR, data);
-
-    return { content: [{ type: 'text' as const, text: `File "${relativePath}" sent${args.caption ? ` with caption: "${args.caption}"` : ''}.` }] };
-  },
-);
-
-server.tool(
   'schedule_task',
   `Schedule a recurring or one-time task. The task will run as a full agent with access to all tools. Returns the task ID for future reference. To modify an existing task, use update_task instead.
 
@@ -198,12 +91,39 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
 \u2022 interval: Milliseconds between runs (e.g., "300000" for 5 minutes, "3600000" for 1 hour)
 \u2022 once: Local time WITHOUT "Z" suffix (e.g., "2026-02-01T15:30:00"). Do NOT use UTC/Z suffix.`,
   {
-    prompt: z.string().describe('What the agent should do when the task runs. For isolated mode, include all necessary context here.'),
-    schedule_type: z.enum(['cron', 'interval', 'once']).describe('cron=recurring at specific times, interval=recurring every N ms, once=run once at specific time'),
-    schedule_value: z.string().describe('cron: "*/5 * * * *" | interval: milliseconds like "300000" | once: local timestamp like "2026-02-01T15:30:00" (no Z suffix!)'),
-    context_mode: z.enum(['group', 'isolated']).default('group').describe('group=runs with chat history and memory, isolated=fresh session (include context in prompt)'),
-    target_group_jid: z.string().optional().describe('(Main group only) JID of the group to schedule the task for. Defaults to the current group.'),
-    script: z.string().optional().describe('Optional bash script to run before waking the agent. Script must output JSON on the last line of stdout: { "wakeAgent": boolean, "data"?: any }. If wakeAgent is false, the agent is not called. Test your script with bash -c "..." before scheduling.'),
+    prompt: z
+      .string()
+      .describe(
+        'What the agent should do when the task runs. For isolated mode, include all necessary context here.',
+      ),
+    schedule_type: z
+      .enum(['cron', 'interval', 'once'])
+      .describe(
+        'cron=recurring at specific times, interval=recurring every N ms, once=run once at specific time',
+      ),
+    schedule_value: z
+      .string()
+      .describe(
+        'cron: "*/5 * * * *" | interval: milliseconds like "300000" | once: local timestamp like "2026-02-01T15:30:00" (no Z suffix!)',
+      ),
+    context_mode: z
+      .enum(['group', 'isolated'])
+      .default('group')
+      .describe(
+        'group=runs with chat history and memory, isolated=fresh session (include context in prompt)',
+      ),
+    target_group_jid: z
+      .string()
+      .optional()
+      .describe(
+        '(Main group only) JID of the group to schedule the task for. Defaults to the current group.',
+      ),
+    script: z
+      .string()
+      .optional()
+      .describe(
+        'Optional bash script to run before waking the agent. Script must output JSON on the last line of stdout: { "wakeAgent": boolean, "data"?: any }. If wakeAgent is false, the agent is not called. Test your script with bash -c "..." before scheduling.',
+      ),
   },
   async (args) => {
     // Validate schedule_value before writing IPC
@@ -285,7 +205,12 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     writeIpcFile(TASKS_DIR, data);
 
     return {
-      content: [{ type: 'text' as const, text: `Task ${taskId} scheduled: ${args.schedule_type} - ${args.schedule_value}` }],
+      content: [
+        {
+          type: 'text' as const,
+          text: `Task ${taskId} scheduled: ${args.schedule_type} - ${args.schedule_value}`,
+        },
+      ],
     };
   },
 );
@@ -523,10 +448,24 @@ server.tool(
 
 Use available_groups.json to find the JID for a group. The folder name must be channel-prefixed: "{channel}_{group-name}" (e.g., "whatsapp_family-chat", "telegram_dev-team", "discord_general"). Use lowercase with hyphens for the group name part.`,
   {
-    jid: z.string().describe('The chat JID (e.g., "120363336345536173@g.us", "tg:-1001234567890", "dc:1234567890123456")'),
+    jid: z
+      .string()
+      .describe(
+        'The chat JID (e.g., "120363336345536173@g.us", "tg:-1001234567890", "dc:1234567890123456")',
+      ),
     name: z.string().describe('Display name for the group'),
-    folder: z.string().describe('Channel-prefixed folder name (e.g., "whatsapp_family-chat", "telegram_dev-team")'),
+    folder: z
+      .string()
+      .describe(
+        'Channel-prefixed folder name (e.g., "whatsapp_family-chat", "telegram_dev-team")',
+      ),
     trigger: z.string().describe('Trigger word (e.g., "@Andy")'),
+    requiresTrigger: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether messages must start with the trigger word. Default: false (respond to all messages). Set to true for busy groups with many participants where you only want the agent to respond when explicitly mentioned.',
+      ),
   },
   async (args) => {
     if (!isMain) {
@@ -547,6 +486,7 @@ Use available_groups.json to find the JID for a group. The folder name must be c
       name: args.name,
       folder: args.folder,
       trigger: args.trigger,
+      requiresTrigger: args.requiresTrigger ?? false,
       timestamp: new Date().toISOString(),
     };
 

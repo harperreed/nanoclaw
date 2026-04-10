@@ -60,7 +60,6 @@ function log(
 }
 
 export const logger = {
-  level: 'info' as string,
   debug: (dataOrMsg: Record<string, unknown> | string, msg?: string) =>
     log('debug', dataOrMsg, msg),
   info: (dataOrMsg: Record<string, unknown> | string, msg?: string) =>
@@ -71,10 +70,6 @@ export const logger = {
     log('error', dataOrMsg, msg),
   fatal: (dataOrMsg: Record<string, unknown> | string, msg?: string) =>
     log('fatal', dataOrMsg, msg),
-  trace: (dataOrMsg: Record<string, unknown> | string, msg?: string) =>
-    log('debug', dataOrMsg, msg),
-  // Pino-compatible child() for libraries like baileys
-  child: () => logger,
 };
 
 // Route uncaught errors through logger so they get timestamps in stderr
