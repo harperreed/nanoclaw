@@ -359,12 +359,15 @@ git checkout -b "$BRANCH_NAME" main
 info "Applying ${#UPSTREAM_ONLY[@]} upstream-only changes..."
 
 for file in "${UPSTREAM_ONLY[@]}"; do
-  # Create parent directory if needed (file may be new from upstream)
-  mkdir -p "$(dirname "$file")"
-  # Use git show to write the file (works for both new and existing files)
-  git show "upstream/main:${file}" > "$file"
-  git add "$file"
-  echo "  ✓ ${file}"
+  if git cat-file -e "upstream/main:${file}" 2>/dev/null; then
+    mkdir -p "$(dirname "$file")"
+    git show "upstream/main:${file}" > "$file"
+    git add "$file"
+    echo "  ✓ ${file}"
+  elif [ -f "$file" ]; then
+    git rm -f "$file" > /dev/null 2>&1
+    echo "  ✗ ${file} (deleted upstream)"
+  fi
 done
 
 # ── Commit ───────────────────────────────────────────────────────────────────
