@@ -46,6 +46,7 @@ import {
   setSession,
   storeChatMetadata,
   storeMessage,
+  storeMessageDirect,
 } from './db.js';
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
@@ -75,6 +76,29 @@ let sessions: Record<string, string> = {};
 let registeredGroups: Record<string, RegisteredGroup> = {};
 let lastAgentTimestamp: Record<string, string> = {};
 let messageLoopRunning = false;
+
+/** Generate a unique ID for outgoing bot messages. */
+function genBotMsgId(): string {
+  return `bot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Store an outgoing bot message in the DB so agents can query full threads. */
+function storeBotOutgoing(
+  chatJid: string,
+  content: string,
+  senderName: string,
+): void {
+  storeMessageDirect({
+    id: genBotMsgId(),
+    chat_jid: chatJid,
+    sender: 'bot',
+    sender_name: senderName,
+    content,
+    timestamp: new Date().toISOString(),
+    is_from_me: true,
+    is_bot_message: true,
+  });
+}
 
 const channels: Channel[] = [];
 const queue = new GroupQueue();
@@ -293,6 +317,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
       if (text) {
         await channel.sendMessage(chatJid, text);
+        storeBotOutgoing(chatJid, text, group.name);
         outputSentToUser = true;
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
@@ -601,6 +626,8 @@ async function main(): Promise<void> {
       const channel = findChannel(channels, chatJid);
       if (!channel) return;
       await channel.sendMessage(chatJid, text);
+      const agentName = registeredGroups[chatJid]?.name || ASSISTANT_NAME;
+      storeBotOutgoing(chatJid, text, agentName);
     },
     isMainGroup: (chatJid) => {
       const group = registeredGroups[chatJid];
@@ -744,23 +771,36 @@ async function main(): Promise<void> {
         return;
       }
       const text = formatOutbound(rawText);
-      if (text) await channel.sendMessage(jid, text);
+      if (text) {
+        await channel.sendMessage(jid, text);
+        const agentName = registeredGroups[jid]?.name || ASSISTANT_NAME;
+        storeBotOutgoing(jid, text, agentName);
+      }
     },
   });
   startIpcWatcher({
-    sendMessage: (jid, text) => {
+    sendMessage: async (jid, text) => {
       const channel = findChannel(channels, jid);
       if (!channel) throw new Error(`No channel for JID: ${jid}`);
-      return channel.sendMessage(jid, text);
+      await channel.sendMessage(jid, text);
+      const agentName = registeredGroups[jid]?.name || ASSISTANT_NAME;
+      storeBotOutgoing(jid, text, agentName);
     },
-    sendFile: (jid, filePath, mimetype, caption) => {
+    sendFile: async (jid, filePath, mimetype, caption) => {
       const channel = findChannel(channels, jid);
       if (!channel) throw new Error(`No channel for JID: ${jid}`);
       if (!channel.sendFile) {
         logger.warn({ jid }, 'Channel does not support file sending');
-        return Promise.resolve();
+        return;
       }
-      return channel.sendFile(jid, filePath, mimetype, caption);
+      await channel.sendFile(jid, filePath, mimetype, caption);
+      const agentName = registeredGroups[jid]?.name || ASSISTANT_NAME;
+      const filename = filePath.split('/').pop() || 'file';
+      storeBotOutgoing(
+        jid,
+        `[File: ${filename}]${caption ? ` ${caption}` : ''}`,
+        agentName,
+      );
     },
     reactToMessage: (jid, messageId, emoji, fromMe) => {
       const channel = findChannel(channels, jid);
