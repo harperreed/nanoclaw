@@ -83,10 +83,14 @@ export function loadMountAllowlist(): MountAllowlist | null {
       throw new Error('nonMainReadOnly must be a boolean');
     }
 
-    // Merge with default blocked patterns
+    // Merge with default blocked patterns, minus any explicit unblocks
+    const unblocked = new Set(
+      (allowlist as unknown as { unblockedPatterns?: string[] })
+        .unblockedPatterns || [],
+    );
     const mergedBlockedPatterns = [
       ...new Set([...DEFAULT_BLOCKED_PATTERNS, ...allowlist.blockedPatterns]),
-    ];
+    ].filter((p) => !unblocked.has(p));
     allowlist.blockedPatterns = mergedBlockedPatterns;
 
     cachedAllowlist = allowlist;
