@@ -422,6 +422,7 @@ async function runAgent(
         groupFolder: group.folder,
         chatJid,
         isMain,
+        hostAccess: group.containerConfig?.hostAccess,
         assistantName: ASSISTANT_NAME,
       },
       (proc, containerName) =>

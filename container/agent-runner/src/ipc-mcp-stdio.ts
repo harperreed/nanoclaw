@@ -19,6 +19,7 @@ const TASKS_DIR = path.join(IPC_DIR, 'tasks');
 const chatJid = process.env.NANOCLAW_CHAT_JID!;
 const groupFolder = process.env.NANOCLAW_GROUP_FOLDER!;
 const isMain = process.env.NANOCLAW_IS_MAIN === '1';
+const hasHostAccess = process.env.NANOCLAW_HOST_ACCESS === '1';
 
 function writeIpcFile(dir: string, data: object): string {
   fs.mkdirSync(dir, { recursive: true });
@@ -436,6 +437,41 @@ server.tool(
         {
           type: 'text' as const,
           text: `Task ${args.task_id} update requested.`,
+        },
+      ],
+    };
+  },
+);
+
+server.tool(
+  'restart_nanoclaw',
+  'Safely restart the NanoClaw orchestrator service. Requires host access privilege (isMain or containerConfig.hostAccess). The service will restart cleanly via launchd after a 2-second delay. Use this instead of shelling out to launchctl.',
+  {},
+  async () => {
+    if (!hasHostAccess) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: 'Error: restart_nanoclaw requires host access privilege.',
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    writeIpcFile(TASKS_DIR, {
+      type: 'restart_nanoclaw',
+      chatJid,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    });
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: 'Restart requested. NanoClaw will restart in ~2 seconds.',
         },
       ],
     };
