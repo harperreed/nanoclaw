@@ -63,6 +63,7 @@ Configured in `containerConfig.additionalMounts`. Mounted at `/workspace/extra/{
 | 2389 | `/workspace/extra/personal-os` | `/Users/harper/Public/agent/groups/personal-os` | read-only |
 | finances | `/workspace/extra/finances` | `/Users/harper/Dropbox/Documents/Personal/finances` | read-write |
 | finances | `/workspace/extra/.msgvault` | `/Users/harper/.msgvault` | read-write |
+| all groups | `/workspace/extra/HarperObsidian` | `/Users/harper/Public/Harper Notes` | read-write |
 
 Mount security is controlled by `~/.config/nanoclaw/mount-allowlist.json` (never mounted into containers).
 
