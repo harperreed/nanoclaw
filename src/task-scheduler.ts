@@ -18,6 +18,7 @@ import {
 } from './db.js';
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
+import { syncHonchoMessages } from './honcho.js';
 import { logger } from './logger.js';
 import { RegisteredGroup, ScheduledTask } from './types.js';
 
@@ -190,6 +191,12 @@ async function runTask(
           result = streamedOutput.result;
           // Forward result to user (sendMessage handles formatting)
           await deps.sendMessage(task.chat_jid, streamedOutput.result);
+          syncHonchoMessages(
+            task.group_folder,
+            [{ content: task.prompt, sender: 'system' }],
+            streamedOutput.result,
+            true, // isScheduledTask — will be skipped by Honcho sync
+          );
           scheduleClose();
         }
         if (streamedOutput.status === 'success') {

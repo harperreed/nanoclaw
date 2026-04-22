@@ -73,6 +73,7 @@ import { startSchedulerLoop } from './task-scheduler.js';
 import { StatusTracker } from './status-tracker.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { parseImageReferences } from './image.js';
+import { getHonchoContext, initHoncho, syncHonchoMessages } from './honcho.js';
 import { logger } from './logger.js';
 
 // Re-export for backwards compatibility during refactor
@@ -312,7 +313,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     statusTracker.markThinking(msg.id);
   }
 
-  const prompt = formatMessages(missedMessages, TIMEZONE);
+  const honchoContext = await getHonchoContext(group.folder);
+  const rawPrompt = formatMessages(missedMessages, TIMEZONE);
+  const prompt = honchoContext ? `${honchoContext}\n\n${rawPrompt}` : rawPrompt;
   const imageAttachments = parseImageReferences(missedMessages);
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
@@ -370,6 +373,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         if (text) {
           await channel.sendMessage(chatJid, text);
           storeBotOutgoing(chatJid, text, group.name);
+          syncHonchoMessages(
+            group.folder,
+            missedMessages.map((m) => ({ content: m.content, sender: m.sender_name })),
+            text,
+          );
           outputSentToUser = true;
         }
         // Only reset idle timer on actual results, not session-update markers (result: null)
@@ -701,6 +709,9 @@ async function main(): Promise<void> {
   logger.info('Database initialized');
   loadState();
   restoreRemoteControl();
+
+  // Initialize Honcho memory (non-blocking — if it fails, we continue without it)
+  await initHoncho();
 
   // Initialize status tracker (uses channels via callbacks, channels don't need to be connected yet)
   statusTracker = new StatusTracker({
