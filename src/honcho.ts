@@ -31,7 +31,7 @@ const CONTEXT_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
 export async function initHoncho(): Promise<boolean> {
   try {
     const env = readEnvFile(['HONCHO_API_KEY']);
-    const apiKey = env.HONCHO_API_KEY;
+    const apiKey = process.env.HONCHO_API_KEY || env.HONCHO_API_KEY;
     if (!apiKey) {
       logger.info('Honcho: no API key found, skipping initialization');
       return false;
@@ -49,7 +49,10 @@ export async function initHoncho(): Promise<boolean> {
       clearTimeout(timeout);
     }
   } catch (err) {
-    logger.warn({ err }, 'Honcho initialization failed — continuing without memory');
+    logger.warn(
+      { err },
+      'Honcho initialization failed — continuing without memory',
+    );
     honcho = null;
     harperPeer = null;
     return false;
@@ -110,7 +113,11 @@ export async function getHonchoContext(groupFolder: string): Promise<string> {
     clearTimeout(timeout);
 
     if (!representation) {
-      contextCache.set(groupFolder, { text: '', turns: 0, timestamp: Date.now() });
+      contextCache.set(groupFolder, {
+        text: '',
+        turns: 0,
+        timestamp: Date.now(),
+      });
       return '';
     }
 
