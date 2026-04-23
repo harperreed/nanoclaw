@@ -375,7 +375,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           storeBotOutgoing(chatJid, text, group.name);
           syncHonchoMessages(
             group.folder,
-            missedMessages.map((m) => ({ content: m.content, sender: m.sender_name })),
+            missedMessages.map((m) => ({
+              content: m.content,
+              sender: m.sender_name,
+            })),
             text,
           );
           outputSentToUser = true;
