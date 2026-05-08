@@ -50,6 +50,8 @@ This adds:
 - `src/status-tracker.test.ts` (unit tests for StatusTracker)
 - `container/skills/reactions/SKILL.md` (agent-facing documentation for the `react_to_message` MCP tool)
 - Reaction support in `src/db.ts`, `src/channels/whatsapp.ts`, `src/types.ts`, `src/ipc.ts`, `src/index.ts`, `src/group-queue.ts`, and `container/agent-runner/src/ipc-mcp-stdio.ts`
+- Message IDs included as `id` attributes in the prompt XML so agents know which message to react to
+- Agent-runner source sync changed from copy-only-on-first-run to always-sync, ensuring code updates take effect without clearing sessions
 
 ### Run database migration
 

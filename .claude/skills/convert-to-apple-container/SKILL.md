@@ -88,21 +88,21 @@ All tests must pass and build must be clean before proceeding.
 
 ## Phase 3: Credential proxy network binding
 
-Apple Container uses a bridge network (bridge100) that only exists while containers are running. The credential proxy must start before any container, so it cannot bind to the bridge IP. It must bind to `0.0.0.0`, which exposes port 3001 on all network interfaces — anyone on your local network could route API requests through the proxy using your credentials.
+Apple Container uses a bridge network (bridge100/bridge0) whose IP is only available while containers are running. The runtime uses **deferred bridge IP resolution** — `CONTAINER_HOST_GATEWAY` and `PROXY_BIND_HOST` are lazy functions that poll for the bridge interface via `waitForBridge()` rather than resolving at startup.
 
-Use AskUserQuestion to ask the user:
-
-**"The credential proxy needs to bind to all interfaces (0.0.0.0). Is this Mac on a trusted private network?"**
-
-Options:
-1. **Yes, private/home network** — description: "No firewall rule needed."
-2. **No, shared/public network** — description: "Add a macOS firewall rule to block external access to port 3001."
-
-For both options, add `CREDENTIAL_PROXY_HOST=0.0.0.0` to `.env`:
+**`CREDENTIAL_PROXY_HOST` is required** — the runtime throws at startup if it's missing (no default). Set it in `.env`:
 
 ```bash
 grep -q 'CREDENTIAL_PROXY_HOST' .env 2>/dev/null || echo 'CREDENTIAL_PROXY_HOST=0.0.0.0' >> .env
 ```
+
+Using `0.0.0.0` exposes port 3001 on all network interfaces. Use AskUserQuestion to ask the user:
+
+**"The credential proxy binds to all interfaces (0.0.0.0). Is this Mac on a trusted private network?"**
+
+Options:
+1. **Yes, private/home network** — description: "No firewall rule needed."
+2. **No, shared/public network** — description: "Add a macOS firewall rule to block external access to port 3001."
 
 If they chose the public network option, set up and persist the firewall rule:
 
